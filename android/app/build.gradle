@@ -1,14 +1,15 @@
 plugins {
     id "com.android.application"
     id "kotlin-android"
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    // Flutter plugin
     id "dev.flutter.flutter-gradle-plugin"
-    // Add the Google services Gradle plugin
+    // Google services plugin
     id "com.google.gms.google-services"
 }
 
 android {
-    namespace = "com.example.attempt2"
+    namespace = "com.capstone.fitnessdiet"   // ✅ UPDATED namespace
+
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -22,11 +23,9 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.attempt2"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        // Updated minSdk for Firebase compatibility
+        // ✅ UPDATED applicationId
+        applicationId = "com.capstone.fitnessdiet"
+
         minSdk = 21
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -36,9 +35,7 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.debug
+            signingConfig = signingConfigs.debug // <-- You can update to a real signing config for release
         }
     }
 }
@@ -48,10 +45,13 @@ flutter {
 }
 
 dependencies {
-    // Add the Firebase BoM
+    // Firebase BoM
     implementation platform('com.google.firebase:firebase-bom:32.7.2')
-    // Add Firebase Analytics for good measure
+    // Firebase Analytics (optional, but good)
     implementation 'com.google.firebase:firebase-analytics'
-    // Add multidex support
+    // Multidex support
     implementation 'androidx.multidex:multidex:2.0.1'
 }
+
+// ✅ Google services plugin application
+apply plugin: 'com.google.gms.google-services'

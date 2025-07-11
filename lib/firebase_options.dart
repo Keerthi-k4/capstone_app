@@ -53,11 +53,11 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyCc68n1IgPnaCKVIQHiErpv52dO8f7mucI',
-    appId: '1:324176872162:android:000ddf0d862ae9345094bb',
-    messagingSenderId: '324176872162',
-    projectId: 'capstone-7642f',
-    storageBucket: 'capstone-7642f.firebasestorage.app',
+    apiKey: 'AIzaSyAkpJCzXEm_ObjVAQ1ebGjc4YnORh5YPFM',
+    appId: '1:551251134392:android:15b476fa98edb57d81714d',
+    messagingSenderId: '551251134392',
+    projectId: 'capstone-diet-fitness',
+    storageBucket: 'capstone-diet-fitness.firebasestorage.app',
   );
 
   static const FirebaseOptions web = FirebaseOptions(
@@ -71,13 +71,13 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBL2GBbB8E2pDpfhIabtohsNgjUrFRXEwk',
-    appId: '1:324176872162:ios:5f9c71b2856d36685094bb',
-    messagingSenderId: '324176872162',
-    projectId: 'capstone-7642f',
-    storageBucket: 'capstone-7642f.firebasestorage.app',
-    iosClientId: '324176872162-9htti4ifchhr1l92k3auckfgmieknr6f.apps.googleusercontent.com',
-    iosBundleId: 'com.example.dietFitnessApp',
+    apiKey: 'AIzaSyAtTWHK9aCiBS047ortomSHp_mScfCxHH0',
+    appId: '1:551251134392:ios:73253552db089f3881714d',
+    messagingSenderId: '551251134392',
+    projectId: 'capstone-diet-fitness',
+    storageBucket: 'capstone-diet-fitness.firebasestorage.app',
+    iosClientId: '551251134392-fak5k6tkjvvjlk91nr96k5j0lhv39b1l.apps.googleusercontent.com',
+    iosBundleId: 'com.example.attempt2',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(

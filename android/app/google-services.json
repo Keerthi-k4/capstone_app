@@ -1,29 +1,47 @@
 {
   "project_info": {
-    "project_number": "324176872162",
-    "project_id": "capstone-7642f",
-    "storage_bucket": "capstone-7642f.firebasestorage.app"
+    "project_number": "551251134392",
+    "project_id": "capstone-diet-fitness",
+    "storage_bucket": "capstone-diet-fitness.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:324176872162:android:000ddf0d862ae9345094bb",
+        "mobilesdk_app_id": "1:551251134392:android:6b99e710f11a407581714d",
         "android_client_info": {
-          "package_name": "com.example.attempt2"
+          "package_name": "com.capstone.fitnessdiet"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "551251134392-2tkoucib01kt6t4l3djh1isjqrv7hoa6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.capstone.fitnessdiet",
+            "certificate_hash": "dafb80e12847ec3dd302d4f5dcaf5658686eab07"
+          }
+        },
+        {
+          "client_id": "551251134392-6as5sa6upekf2f8llv5squgp7uuf1t2k.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyCc68n1IgPnaCKVIQHiErpv52dO8f7mucI"
+          "current_key": "AIzaSyAkpJCzXEm_ObjVAQ1ebGjc4YnORh5YPFM"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "551251134392-6as5sa6upekf2f8llv5squgp7uuf1t2k.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
   ],
   "configuration_version": "1"
-} 
+}
