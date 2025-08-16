@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:attempt2/providers/auth_provider.dart';
 import 'package:attempt2/models/user_model.dart';
+import 'food_tracking_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -167,10 +168,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       Icons.restaurant,
                       Colors.orange,
                       () {
-                        // TODO: Navigate to food tracking screen
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Food tracking coming soon!'),
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const FoodTrackingScreen(),
                           ),
                         );
                       },
