@@ -414,8 +414,11 @@ class FoodFirestoreService {
             try {
               final recommendation =
                   FoodRecommendation.fromJson(recJson, userId);
+              final dataToSave = recommendation.toFirestoreMap();
+              // Force the stored date to the requested date to match UI queries
+              dataToSave['date'] = date;
               final docRef = _foodRecommendationsCollection.doc();
-              recommendationsBatch.set(docRef, recommendation.toFirestoreMap());
+              recommendationsBatch.set(docRef, dataToSave);
               insertedCount++;
             } catch (e) {
               print('Error preparing recommendation: $e');

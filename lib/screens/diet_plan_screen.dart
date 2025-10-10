@@ -267,10 +267,8 @@ class _DietPlansScreenState extends State<DietPlansScreen> {
   }
 
   Widget _buildRecommendationsSection() {
-    final currentMealType = _getCurrentMealType();
-    final filteredRecommendations = _recommendations
-        .where((rec) => rec.mealType.toLowerCase() == currentMealType)
-        .toList();
+    // Show all recommendations for the day (not just current meal type)
+    final recs = _recommendations;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -286,7 +284,7 @@ class _DietPlansScreenState extends State<DietPlansScreen> {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  'For ${_capitalize(currentMealType)}',
+                  'For today',
                   style: TextStyle(
                     fontSize: 12,
                     color: Colors.grey[600],
@@ -297,9 +295,9 @@ class _DietPlansScreenState extends State<DietPlansScreen> {
             ),
             Row(
               children: [
-                if (filteredRecommendations.isNotEmpty)
+                if (recs.isNotEmpty)
                   Text(
-                    '${filteredRecommendations.length} items',
+                    '${recs.length} items',
                     style: TextStyle(
                       fontSize: 14,
                       color: Colors.grey[600],
@@ -331,7 +329,7 @@ class _DietPlansScreenState extends State<DietPlansScreen> {
           ],
         ),
         const SizedBox(height: 8),
-        if (filteredRecommendations.isEmpty)
+        if (recs.isEmpty)
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -341,14 +339,14 @@ class _DietPlansScreenState extends State<DietPlansScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                        'No recommendations for ${_capitalize(currentMealType)} yet. Log some food and generate recommendations!'),
+                        'No recommendations yet. Log some food and generate recommendations!'),
                   ),
                 ],
               ),
             ),
           )
         else
-          ...filteredRecommendations.map((rec) {
+          ...recs.map((rec) {
             final isAccepted = rec.accepted;
             final recId = rec.id!;
             final itemName = rec.item;

@@ -4,8 +4,9 @@ import 'package:attempt2/providers/auth_provider.dart';
 import 'package:attempt2/models/user_model.dart';
 import 'food_tracking_screen_new.dart';
 import 'diet_plan_screen.dart';
-import 'package:attempt2/screens/goals_screen.dart';
+import 'goals_screen.dart';
 import 'package:attempt2/services/user_goals_service.dart';
+import 'package:attempt2/services/water_service.dart';
 import 'dart:math' as math;
 
 class HomeScreen extends StatefulWidget {
@@ -19,11 +20,14 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   final UserGoalsService _goalsService = UserGoalsService();
   UserGoals _goals = UserGoals.defaults;
+  final WaterService _waterService = WaterService();
+  int _todayWater = 0;
 
   @override
   void initState() {
     super.initState();
     _loadGoals();
+    _loadWater();
   }
 
   Future<void> _loadGoals() async {
@@ -31,6 +35,119 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) {
       setState(() => _goals = g);
     }
+  }
+
+  Future<void> _loadWater() async {
+    final today = DateTime.now().toIso8601String().split('T')[0];
+    final c = await _waterService.getCountForDate(today);
+    if (mounted) setState(() => _todayWater = c);
+  }
+
+  Future<void> _openWaterEditor() async {
+    final today = DateTime.now().toIso8601String().split('T')[0];
+    final countCtrl = TextEditingController(text: '$_todayWater');
+    final targetCtrl =
+        TextEditingController(text: '${_goals.waterGlassesTarget}');
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+            left: 16,
+            right: 16,
+            top: 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Water intake',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: countCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Glasses today',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  IconButton(
+                    icon: const Icon(Icons.remove_circle_outline),
+                    onPressed: () {
+                      final v = (int.tryParse(countCtrl.text) ?? 0) - 1;
+                      countCtrl.text = v < 0 ? '0' : '$v';
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.add_circle_outline),
+                    onPressed: () {
+                      final v = (int.tryParse(countCtrl.text) ?? 0) + 1;
+                      countCtrl.text = '$v';
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: targetCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Daily target (glasses)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    final newCount =
+                        int.tryParse(countCtrl.text) ?? _todayWater;
+                    final newTarget = int.tryParse(targetCtrl.text) ??
+                        _goals.waterGlassesTarget;
+                    await _waterService.setCount(today, newCount);
+                    final updatedGoals =
+                        _goals.copyWith(waterGlassesTarget: newTarget);
+                    await _goalsService.saveGoals(updatedGoals);
+                    if (mounted) {
+                      setState(() {
+                        _todayWater = newCount;
+                        _goals = updatedGoals;
+                      });
+                    }
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  },
+                  child: const Text('Save'),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -405,17 +522,20 @@ class _HomeScreenState extends State<HomeScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: _buildGoalCard(
-                      'Water',
-                      '6',
-                      '${_goals.waterGlassesTarget} glasses',
-                      (6 /
-                              (_goals.waterGlassesTarget == 0
-                                  ? 1
-                                  : _goals.waterGlassesTarget))
-                          .clamp(0.0, 1.0),
-                      Colors.blue,
-                      Icons.local_drink,
+                    child: GestureDetector(
+                      onTap: _openWaterEditor,
+                      child: _buildGoalCard(
+                        'Water',
+                        '$_todayWater',
+                        '${_goals.waterGlassesTarget} glasses',
+                        (_todayWater /
+                                (_goals.waterGlassesTarget == 0
+                                    ? 1
+                                    : _goals.waterGlassesTarget))
+                            .clamp(0.0, 1.0),
+                        Colors.blue,
+                        Icons.local_drink,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 16),

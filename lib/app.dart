@@ -6,7 +6,7 @@ import 'package:attempt2/screens/home_screen.dart';
 import 'package:attempt2/core/theme.dart';
 import 'package:attempt2/providers/auth_provider.dart';
 import 'package:attempt2/providers/diet_provider.dart';
-import 'package:attempt2/screens/goals_screen.dart';
+import 'screens/goals_screen.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
