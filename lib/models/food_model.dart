@@ -275,3 +275,165 @@ class DietPlan {
     );
   }
 }
+
+/// Model for ML food recognition prediction
+class FoodPrediction {
+  final String name;
+  final double confidence;
+  final bool isCustomModel;
+  final Map<String, dynamic>? nutrition;
+
+  FoodPrediction({
+    required this.name,
+    required this.confidence,
+    this.isCustomModel = false,
+    this.nutrition,
+  });
+
+  factory FoodPrediction.fromJson(Map<String, dynamic> json) {
+    return FoodPrediction(
+      name: json['name'] ?? '',
+      confidence: (json['confidence'] ?? 0.0).toDouble(),
+      isCustomModel: json['is_custom_model'] ?? false,
+      nutrition: json['nutrition'],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'confidence': confidence,
+      'is_custom_model': isCustomModel,
+      'nutrition': nutrition,
+    };
+  }
+}
+
+/// Model for ML API response
+class MLFoodRecognitionResponse {
+  final bool success;
+  final List<FoodPrediction> predictions;
+  final FoodPredictionWithNutrition? topPrediction;
+  final String? error;
+
+  MLFoodRecognitionResponse({
+    required this.success,
+    this.predictions = const [],
+    this.topPrediction,
+    this.error,
+  });
+
+  factory MLFoodRecognitionResponse.fromJson(Map<String, dynamic> json) {
+    return MLFoodRecognitionResponse(
+      success: json['success'] ?? false,
+      predictions: json['predictions'] != null
+          ? (json['predictions'] as List)
+              .map((pred) => FoodPrediction.fromJson(pred))
+              .toList()
+          : [],
+      topPrediction: json['top_prediction'] != null
+          ? FoodPredictionWithNutrition.fromJson(json['top_prediction'])
+          : null,
+      error: json['error'],
+    );
+  }
+}
+
+/// Model for food prediction with nutrition data
+class FoodPredictionWithNutrition {
+  final String name;
+  final double confidence;
+  final NutritionData? nutrition;
+
+  FoodPredictionWithNutrition({
+    required this.name,
+    required this.confidence,
+    this.nutrition,
+  });
+
+  factory FoodPredictionWithNutrition.fromJson(Map<String, dynamic> json) {
+    return FoodPredictionWithNutrition(
+      name: json['name'] ?? '',
+      confidence: (json['confidence'] ?? 0.0).toDouble(),
+      nutrition: json['nutrition'] != null
+          ? NutritionData.fromJson(json['nutrition'])
+          : null,
+    );
+  }
+}
+
+/// Model for nutrition data from API
+class NutritionData {
+  final String foodName;
+  final double calories;
+  final double protein;
+  final double carbohydrates;
+  final double fat;
+  final double fiber;
+  final double sugars;
+  final double sodium;
+  final double cholesterol;
+
+  NutritionData({
+    required this.foodName,
+    required this.calories,
+    required this.protein,
+    required this.carbohydrates,
+    required this.fat,
+    required this.fiber,
+    required this.sugars,
+    required this.sodium,
+    required this.cholesterol,
+  });
+
+  factory NutritionData.fromJson(Map<String, dynamic> json) {
+    return NutritionData(
+      foodName: json['food_name'] ?? '',
+      calories: (json['energy_kcal'] ?? 0.0).toDouble(),
+      protein: (json['protein_g'] ?? 0.0).toDouble(),
+      carbohydrates: (json['carbohydrate_g'] ?? 0.0).toDouble(),
+      fat: (json['fat_g'] ?? 0.0).toDouble(),
+      fiber: (json['fibre_g'] ?? 0.0).toDouble(),
+      sugars: (json['sugars_g'] ?? 0.0).toDouble(),
+      sodium: (json['sodium_mg'] ?? 0.0).toDouble(),
+      cholesterol: (json['cholesterol_mg'] ?? 0.0).toDouble(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'food_name': foodName,
+      'energy_kcal': calories,
+      'protein_g': protein,
+      'carbohydrate_g': carbohydrates,
+      'fat_g': fat,
+      'fibre_g': fiber,
+      'sugars_g': sugars,
+      'sodium_mg': sodium,
+      'cholesterol_mg': cholesterol,
+    };
+  }
+
+  /// Convert to FoodItem
+  FoodItem toFoodItem({String? id, double quantity = 100}) {
+    final scaleFactor = quantity / 100.0; // Assuming base data is per 100g
+    
+    return FoodItem(
+      id: id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      name: foodName,
+      calories: calories * scaleFactor,
+      protein: protein * scaleFactor,
+      carbs: carbohydrates * scaleFactor,
+      fat: fat * scaleFactor,
+      nutritionalInfo: {
+        'fiber': fiber * scaleFactor,
+        'sugars': sugars * scaleFactor,
+        'sodium': sodium * scaleFactor,
+        'cholesterol': cholesterol * scaleFactor,
+        'quantity_g': quantity,
+      },
+      servingSize: '${quantity.toInt()}g',
+      category: 'ML_Recognized',
+    );
+  }
+}

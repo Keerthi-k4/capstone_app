@@ -2,9 +2,10 @@
 File: lib/screens/food_tracking_screen.dart
 */
 import 'package:flutter/material.dart';
-import '../services/food_db_helper.dart';
+import 'dart:io';
+import '../services/food_firestore_service.dart';
 import '../services/image_capture_service.dart';
-import '../services/hybrid_ml_service.dart';
+import '../services/ml_food_recognition_service.dart';
 import 'food_confirmation_screen.dart';
 import 'manual_food_search_screen.dart';
 
@@ -16,38 +17,37 @@ class FoodTrackingScreen extends StatefulWidget {
 }
 
 class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
-  final FoodDBHelper _dbHelper = FoodDBHelper();
+  final FoodFirestoreService _firestoreService = FoodFirestoreService();
   final ImageCaptureService _imageService = ImageCaptureService();
-  final HybridMLService _mlService = HybridMLService();
+  final MLFoodRecognitionService _mlService = MLFoodRecognitionService();
 
   List<FoodLog> _todayLogs = [];
   late String _today;
-  MLServiceStatus _mlStatus = MLServiceStatus.none;
-  bool _checkingMLStatus = false;
+  bool _isServerHealthy = false;
+  bool _checkingServer = false;
 
   @override
   void initState() {
     super.initState();
     _today = DateTime.now().toIso8601String().split('T').first;
     _loadLogs();
-    _checkMLStatus();
+    _checkServerHealth();
   }
 
-  Future<void> _checkMLStatus() async {
-    setState(() => _checkingMLStatus = true);
+  Future<void> _checkServerHealth() async {
+    setState(() => _checkingServer = true);
     try {
-      await _mlService.initialize();
-      final status = _mlService.getStatus();
-      setState(() => _mlStatus = status);
+      final isHealthy = await _mlService.isServerHealthy();
+      setState(() => _isServerHealthy = isHealthy);
     } catch (e) {
-      setState(() => _mlStatus = MLServiceStatus.none);
+      setState(() => _isServerHealthy = false);
     } finally {
-      setState(() => _checkingMLStatus = false);
+      setState(() => _checkingServer = false);
     }
   }
 
   Future<void> _loadLogs() async {
-    final logs = await _dbHelper.getLogsByDate(_today);
+    final logs = await _firestoreService.getLogsByDate(_today);
     setState(() {
       _todayLogs = logs;
     });
@@ -67,10 +67,11 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
   }
 
   Future<void> _captureAndRecognizeFood() async {
-    if (!_mlStatus.isAvailable) {
+    if (!_isServerHealthy) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_mlStatus.description),
+        const SnackBar(
+          content: Text(
+              'ML server is not available. Please try manual search instead.'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -86,20 +87,20 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => AlertDialog(
+          builder: (context) => const AlertDialog(
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const CircularProgressIndicator(),
-                const SizedBox(height: 16),
-                Text('Analyzing food image...\n(${_mlStatus.displayName})'),
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Analyzing food image...'),
               ],
             ),
           ),
         );
 
         // Get ML predictions
-        final mlResponse = await _mlService.predictFood(imageFile);
+        final mlResponse = await _mlService.predictFoodWithNutrition(imageFile);
 
         // Close processing dialog
         Navigator.of(context).pop();
@@ -150,11 +151,12 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
         actions: [
           IconButton(
             icon: Icon(
-              _getMLStatusIcon(),
-              color: _getMLStatusColor(),
+              _isServerHealthy ? Icons.cloud_done : Icons.cloud_off,
+              color: _isServerHealthy ? Colors.green : Colors.red,
             ),
-            onPressed: _checkMLStatus,
-            tooltip: _mlStatus.displayName,
+            onPressed: _checkServerHealth,
+            tooltip:
+                _isServerHealthy ? 'ML Server Online' : 'ML Server Offline',
           ),
         ],
       ),
@@ -198,17 +200,17 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
                             style: ElevatedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               backgroundColor:
-                                  _mlStatus.isAvailable ? null : Colors.grey,
+                                  _isServerHealthy ? null : Colors.grey,
                             ),
                           ),
                         ),
                       ],
                     ),
-                    if (!_mlStatus.isAvailable && !_checkingMLStatus)
+                    if (!_isServerHealthy && !_checkingServer)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
-                          _mlStatus.description,
+                          'Note: Photo recognition requires ML server connection',
                           style: TextStyle(
                             color: Colors.grey[600],
                             fontSize: 12,
@@ -290,7 +292,7 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
                             ),
                             title: Text(log.name),
                             subtitle: Text(
-                              'Calories: ${log.calories} · Quantity: ${log.quantity}g · Meal: ${log.mealType}',
+                              'Calories: ${log.calories} · Meal: ${log.mealType}',
                             ),
                             trailing: PopupMenuButton(
                               itemBuilder: (context) => [
@@ -306,9 +308,8 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
                               onSelected: (value) {
                                 if (value == 'delete') {
                                   _deleteLog(log);
-                                } else if (value == 'edit') {
-                                  _editLog(log);
                                 }
+                                // TODO: Implement edit functionality
                               },
                             ),
                           ),
@@ -320,32 +321,6 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
         ),
       ),
     );
-  }
-
-  IconData _getMLStatusIcon() {
-    switch (_mlStatus) {
-      case MLServiceStatus.none:
-        return Icons.cloud_off;
-      case MLServiceStatus.onDeviceOnly:
-        return Icons.phone_android;
-      case MLServiceStatus.serverOnly:
-        return Icons.cloud_done;
-      case MLServiceStatus.both:
-        return Icons.cloud_queue;
-    }
-  }
-
-  Color _getMLStatusColor() {
-    switch (_mlStatus) {
-      case MLServiceStatus.none:
-        return Colors.red;
-      case MLServiceStatus.onDeviceOnly:
-        return Colors.blue;
-      case MLServiceStatus.serverOnly:
-        return Colors.green;
-      case MLServiceStatus.both:
-        return Colors.purple;
-    }
   }
 
   Color _getMealTypeColor(String mealType) {
@@ -398,141 +373,12 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
     );
 
     if (confirmed == true) {
-      await _dbHelper.deleteLog(log.id!);
+      // TODO: Implement delete functionality in FoodDBHelper
+      // await _dbHelper.deleteLog(log.id!);
       _loadLogs();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Deleted "${log.name}"')),
       );
     }
-  }
-
-  Future<void> _editLog(FoodLog log) async {
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (context) => _EditLogDialog(log: log),
-    );
-
-    if (result != null) {
-      final updatedLog = FoodLog(
-        id: log.id,
-        name: result['name'] ?? log.name,
-        calories: result['calories'] ?? log.calories,
-        mealType: result['mealType'] ?? log.mealType,
-        date: log.date,
-        quantity: result['quantity'] ?? log.quantity,
-      );
-
-      await _dbHelper.updateLog(updatedLog);
-      _loadLogs();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Updated "${updatedLog.name}"')),
-      );
-    }
-  }
-}
-
-class _EditLogDialog extends StatefulWidget {
-  final FoodLog log;
-
-  const _EditLogDialog({required this.log});
-
-  @override
-  State<_EditLogDialog> createState() => _EditLogDialogState();
-}
-
-class _EditLogDialogState extends State<_EditLogDialog> {
-  late TextEditingController _nameController;
-  late TextEditingController _caloriesController;
-  late TextEditingController _quantityController;
-  late String _selectedMealType;
-
-  @override
-  void initState() {
-    super.initState();
-    _nameController = TextEditingController(text: widget.log.name);
-    _caloriesController =
-        TextEditingController(text: widget.log.calories.toString());
-    _quantityController =
-        TextEditingController(text: widget.log.quantity.toString());
-    _selectedMealType = widget.log.mealType;
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _caloriesController.dispose();
-    _quantityController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Edit Food Log'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(
-              labelText: 'Food Name',
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _caloriesController,
-            decoration: const InputDecoration(
-              labelText: 'Calories',
-            ),
-            keyboardType: TextInputType.number,
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _quantityController,
-            decoration: const InputDecoration(
-              labelText: 'Quantity (g)',
-            ),
-            keyboardType: TextInputType.number,
-          ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            value: _selectedMealType,
-            decoration: const InputDecoration(
-              labelText: 'Meal Type',
-            ),
-            items: ['breakfast', 'lunch', 'dinner', 'snack']
-                .map((meal) => DropdownMenuItem(
-                      value: meal,
-                      child: Text(meal[0].toUpperCase() + meal.substring(1)),
-                    ))
-                .toList(),
-            onChanged: (value) {
-              setState(() {
-                _selectedMealType = value!;
-              });
-            },
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () {
-            Navigator.of(context).pop({
-              'name': _nameController.text.trim(),
-              'calories':
-                  int.tryParse(_caloriesController.text) ?? widget.log.calories,
-              'quantity': double.tryParse(_quantityController.text) ??
-                  widget.log.quantity,
-              'mealType': _selectedMealType,
-            });
-          },
-          child: const Text('Save'),
-        ),
-      ],
-    );
   }
 }

@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:attempt2/providers/auth_provider.dart';
 import 'package:attempt2/models/user_model.dart';
-import 'food_tracking_screen.dart';
+import 'food_tracking_screen_new.dart';
+import 'diet_plan_screen.dart';
+import 'package:attempt2/screens/goals_screen.dart';
+import 'package:attempt2/services/user_goals_service.dart';
+import 'dart:math' as math;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,6 +17,21 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  final UserGoalsService _goalsService = UserGoalsService();
+  UserGoals _goals = UserGoals.defaults;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGoals();
+  }
+
+  Future<void> _loadGoals() async {
+    final g = await _goalsService.getGoalsOnce();
+    if (mounted) {
+      setState(() => _goals = g);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -184,10 +203,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       Icons.calendar_today,
                       Colors.green,
                       () {
-                        // TODO: Navigate to diet plans screen
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Diet plans coming soon!'),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => DietPlansScreen(
+                              date: DateTime.now()
+                                  .toString()
+                                  .split(' ')[0], // today's date in YYYY-MM-DD
+                            ),
                           ),
                         );
                       },
@@ -236,9 +259,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
               const SizedBox(height: 24),
 
-              // Placeholder for today's meals
+              // Activity Summary Section
               Text(
-                "Today's Meals",
+                "Today's Activity",
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -246,53 +269,188 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(height: 16),
+
+              // Activity Rings Card
               Card(
+                elevation: 4,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.restaurant,
-                          size: 48,
-                          color: Colors.grey,
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'No meals logged today',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Track your first meal to get started',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            // TODO: Navigate to add meal screen
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Add meal feature coming soon!'),
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    children: [
+                      // Activity Rings
+                      SizedBox(
+                        height: 200,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // Calories Ring (outermost)
+                            CustomPaint(
+                              size: const Size(200, 200),
+                              painter: ActivityRingPainter(
+                                progress: 1320 /
+                                    (_goals.caloriesTarget == 0
+                                            ? 1
+                                            : _goals.caloriesTarget)
+                                        .clamp(1, 100000),
+                                color: Colors.pink,
+                                strokeWidth: 18,
                               ),
-                            );
-                          },
-                          icon: const Icon(Icons.add),
-                          label: const Text('Add Meal'),
+                            ),
+                            // Steps Ring (middle)
+                            CustomPaint(
+                              size: const Size(160, 160),
+                              painter: ActivityRingPainter(
+                                progress: 4200 /
+                                    (_goals.stepsTarget == 0
+                                            ? 1
+                                            : _goals.stepsTarget)
+                                        .clamp(1, 100000),
+                                color: Colors.green,
+                                strokeWidth: 18,
+                              ),
+                            ),
+                            // Exercise Ring (innermost)
+                            CustomPaint(
+                              size: const Size(120, 120),
+                              painter: ActivityRingPainter(
+                                progress: 10 /
+                                    (_goals.exerciseMinutesTarget == 0
+                                            ? 1
+                                            : _goals.exerciseMinutesTarget)
+                                        .clamp(1, 100000),
+                                color: Colors.cyan,
+                                strokeWidth: 18,
+                              ),
+                            ),
+                            // Center text
+                            Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.local_fire_department,
+                                  color: Colors.orange,
+                                  size: 32,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '1,320',
+                                  style: TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: Theme.of(context).primaryColor,
+                                  ),
+                                ),
+                                Text(
+                                  'kcal',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Stats Grid
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          _buildActivityStat(
+                            'Calories',
+                            '1,320',
+                            '${_goals.caloriesTarget}',
+                            Colors.pink,
+                            Icons.local_fire_department,
+                          ),
+                          Container(
+                            height: 60,
+                            width: 1,
+                            color: Colors.grey[300],
+                          ),
+                          _buildActivityStat(
+                            'Steps',
+                            '4,200',
+                            '${_goals.stepsTarget}',
+                            Colors.green,
+                            Icons.directions_walk,
+                          ),
+                          Container(
+                            height: 60,
+                            width: 1,
+                            color: Colors.grey[300],
+                          ),
+                          _buildActivityStat(
+                            'Exercise',
+                            '10',
+                            '${_goals.exerciseMinutesTarget} min',
+                            Colors.cyan,
+                            Icons.fitness_center,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Additional Goals
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildGoalCard(
+                      'Water',
+                      '6',
+                      '${_goals.waterGlassesTarget} glasses',
+                      (6 /
+                              (_goals.waterGlassesTarget == 0
+                                  ? 1
+                                  : _goals.waterGlassesTarget))
+                          .clamp(0.0, 1.0),
+                      Colors.blue,
+                      Icons.local_drink,
                     ),
                   ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildGoalCard(
+                      'Protein',
+                      '45',
+                      '${_goals.proteinGramsTarget}g',
+                      (45 /
+                              (_goals.proteinGramsTarget == 0
+                                  ? 1
+                                  : _goals.proteinGramsTarget))
+                          .clamp(0.0, 1.0),
+                      Colors.orange,
+                      Icons.egg,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.flag),
+                  label: const Text('Edit goals'),
+                  onPressed: () async {
+                    final result = await Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const GoalsScreen()),
+                    );
+                    if (result is UserGoals) {
+                      setState(() => _goals = result);
+                    } else {
+                      await _loadGoals();
+                    }
+                  },
                 ),
               ),
             ],
@@ -387,5 +545,163 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildActivityStat(
+    String label,
+    String current,
+    String goal,
+    Color color,
+    IconData icon,
+  ) {
+    return Expanded(
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 24),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            current,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          Text(
+            'of $goal',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.grey[500],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGoalCard(
+    String title,
+    String current,
+    String goal,
+    double progress,
+    Color color,
+    IconData icon,
+  ) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: color, size: 24),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: LinearProgressIndicator(
+                value: progress,
+                backgroundColor: color.withOpacity(0.2),
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+                minHeight: 8,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  current,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+                Text(
+                  'of $goal',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Custom Painter for Activity Rings
+class ActivityRingPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  final double strokeWidth;
+
+  ActivityRingPainter({
+    required this.progress,
+    required this.color,
+    required this.strokeWidth,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (size.width - strokeWidth) / 2;
+
+    // Background circle (gray)
+    final backgroundPaint = Paint()
+      ..color = color.withOpacity(0.2)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawCircle(center, radius, backgroundPaint);
+
+    // Progress arc
+    final progressPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    const startAngle = -math.pi / 2; // Start from top
+    final sweepAngle = 2 * math.pi * progress;
+
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      startAngle,
+      sweepAngle,
+      false,
+      progressPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(ActivityRingPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.color != color ||
+        oldDelegate.strokeWidth != strokeWidth;
   }
 }
