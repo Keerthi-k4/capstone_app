@@ -6,7 +6,7 @@ import 'food_tracking_screen_new.dart';
 import 'diet_plan_screen.dart';
 import 'goals_screen.dart';
 import 'package:attempt2/services/user_goals_service.dart';
-import 'package:attempt2/services/water_service.dart';
+import 'package:attempt2/services/daily_nutrition_service.dart';
 import 'dart:math' as math;
 
 class HomeScreen extends StatefulWidget {
@@ -20,14 +20,16 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   final UserGoalsService _goalsService = UserGoalsService();
   UserGoals _goals = UserGoals.defaults;
-  final WaterService _waterService = WaterService();
+  final DailyNutritionService _nutritionService = DailyNutritionService();
   int _todayWater = 0;
+  DailyNutrition? _todayNutrition;
 
   @override
   void initState() {
     super.initState();
     _loadGoals();
     _loadWater();
+    _loadNutrition();
   }
 
   Future<void> _loadGoals() async {
@@ -39,8 +41,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadWater() async {
     final today = DateTime.now().toIso8601String().split('T')[0];
-    final c = await _waterService.getCountForDate(today);
+    final c = await _goalsService.getWaterCountForDate(today);
     if (mounted) setState(() => _todayWater = c);
+  }
+
+  Future<void> _loadNutrition() async {
+    final nutrition = await _nutritionService.getTodayNutrition();
+    if (mounted) setState(() => _todayNutrition = nutrition);
   }
 
   Future<void> _openWaterEditor() async {
@@ -127,7 +134,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         int.tryParse(countCtrl.text) ?? _todayWater;
                     final newTarget = int.tryParse(targetCtrl.text) ??
                         _goals.waterGlassesTarget;
-                    await _waterService.setCount(today, newCount);
+                    await _goalsService.setWaterCount(today, newCount);
                     final updatedGoals =
                         _goals.copyWith(waterGlassesTarget: newTarget);
                     await _goalsService.saveGoals(updatedGoals);
@@ -407,11 +414,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             CustomPaint(
                               size: const Size(200, 200),
                               painter: ActivityRingPainter(
-                                progress: 1320 /
-                                    (_goals.caloriesTarget == 0
-                                            ? 1
-                                            : _goals.caloriesTarget)
-                                        .clamp(1, 100000),
+                                progress: _todayNutrition != null
+                                    ? _todayNutrition!.calorieProgress
+                                    : 0.0,
                                 color: Colors.pink,
                                 strokeWidth: 18,
                               ),
@@ -420,11 +425,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             CustomPaint(
                               size: const Size(160, 160),
                               painter: ActivityRingPainter(
-                                progress: 4200 /
-                                    (_goals.stepsTarget == 0
-                                            ? 1
-                                            : _goals.stepsTarget)
-                                        .clamp(1, 100000),
+                                progress: _todayNutrition != null
+                                    ? _todayNutrition!.stepsProgress
+                                    : 0.0,
                                 color: Colors.green,
                                 strokeWidth: 18,
                               ),
@@ -433,11 +436,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             CustomPaint(
                               size: const Size(120, 120),
                               painter: ActivityRingPainter(
-                                progress: 10 /
-                                    (_goals.exerciseMinutesTarget == 0
-                                            ? 1
-                                            : _goals.exerciseMinutesTarget)
-                                        .clamp(1, 100000),
+                                progress: _todayNutrition != null
+                                    ? _todayNutrition!.exerciseProgress
+                                    : 0.0,
                                 color: Colors.cyan,
                                 strokeWidth: 18,
                               ),
@@ -453,7 +454,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  '1,320',
+                                  _todayNutrition != null
+                                      ? '${_todayNutrition!.caloriesConsumed}'
+                                      : '0',
                                   style: TextStyle(
                                     fontSize: 24,
                                     fontWeight: FontWeight.bold,
@@ -480,7 +483,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           _buildActivityStat(
                             'Calories',
-                            '1,320',
+                            _todayNutrition != null
+                                ? '${_todayNutrition!.caloriesConsumed}'
+                                : '0',
                             '${_goals.caloriesTarget}',
                             Colors.pink,
                             Icons.local_fire_department,
@@ -492,7 +497,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           _buildActivityStat(
                             'Steps',
-                            '4,200',
+                            _todayNutrition != null
+                                ? '${_todayNutrition!.steps}'
+                                : '0',
                             '${_goals.stepsTarget}',
                             Colors.green,
                             Icons.directions_walk,
@@ -504,7 +511,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           _buildActivityStat(
                             'Exercise',
-                            '10',
+                            _todayNutrition != null
+                                ? '${_todayNutrition!.exerciseMinutes}'
+                                : '0',
                             '${_goals.exerciseMinutesTarget} min',
                             Colors.cyan,
                             Icons.fitness_center,
@@ -542,19 +551,24 @@ class _HomeScreenState extends State<HomeScreen> {
                   Expanded(
                     child: _buildGoalCard(
                       'Protein',
-                      '45',
+                      _todayNutrition != null
+                          ? '${_todayNutrition!.proteinConsumed}'
+                          : '0',
                       '${_goals.proteinGramsTarget}g',
-                      (45 /
-                              (_goals.proteinGramsTarget == 0
-                                  ? 1
-                                  : _goals.proteinGramsTarget))
-                          .clamp(0.0, 1.0),
+                      _todayNutrition != null
+                          ? _todayNutrition!.proteinProgress
+                          : 0.0,
                       Colors.orange,
                       Icons.egg,
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
+
+              // Calorie Balance Meter
+              if (_todayNutrition != null) _buildCalorieBalanceMeter(),
+
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
@@ -567,8 +581,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     );
                     if (result is UserGoals) {
                       setState(() => _goals = result);
+                      await _loadNutrition(); // Refresh nutrition data
                     } else {
                       await _loadGoals();
+                      await _loadNutrition();
                     }
                   },
                 ),
@@ -771,6 +787,112 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  Widget _buildCalorieBalanceMeter() {
+    final nutrition = _todayNutrition!;
+    final isDeficit = nutrition.isCalorieDeficit;
+    final balanceValue = nutrition.caloriesRemaining.abs();
+
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          children: [
+            Text(
+              'Calorie Balance',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).primaryColor,
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Semi-circular gauge
+            SizedBox(
+              height: 120,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Gauge background
+                  CustomPaint(
+                    size: const Size(200, 120),
+                    painter: CalorieGaugePainter(
+                      deficitValue: isDeficit ? balanceValue.toDouble() : 0.0,
+                      surplusValue: !isDeficit ? balanceValue.toDouble() : 0.0,
+                      maxValue: 1000.0, // Adjust based on your needs
+                    ),
+                  ),
+
+                  // Center value and icon
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        isDeficit ? Icons.trending_down : Icons.trending_up,
+                        color: isDeficit ? Colors.green : Colors.orange,
+                        size: 24,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${isDeficit ? '-' : '+'}$balanceValue',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: isDeficit ? Colors.green : Colors.orange,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Deficit/Surplus labels
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade100,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'Deficit',
+                    style: TextStyle(
+                      color: Colors.green.shade700,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade100,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'Surplus',
+                    style: TextStyle(
+                      color: Colors.orange.shade700,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // Custom Painter for Activity Rings
@@ -823,5 +945,86 @@ class ActivityRingPainter extends CustomPainter {
     return oldDelegate.progress != progress ||
         oldDelegate.color != color ||
         oldDelegate.strokeWidth != strokeWidth;
+  }
+}
+
+class CalorieGaugePainter extends CustomPainter {
+  final double deficitValue;
+  final double surplusValue;
+  final double maxValue;
+
+  CalorieGaugePainter({
+    required this.deficitValue,
+    required this.surplusValue,
+    required this.maxValue,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height);
+    final radius = size.width / 2 - 10;
+
+    // Background arc (light gray)
+    final backgroundPaint = Paint()
+      ..color = Colors.grey.shade300
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 20
+      ..strokeCap = StrokeCap.round;
+
+    final rect = Rect.fromCircle(center: center, radius: radius);
+
+    // Draw background arc (semi-circle)
+    canvas.drawArc(
+      rect,
+      math.pi, // start angle: 180 degrees (leftmost)
+      math.pi, // sweep 180 degrees
+      false,
+      backgroundPaint,
+    );
+
+    // --- Deficit section (left side, green) ---
+    if (deficitValue > 0) {
+      final progress = (deficitValue / maxValue).clamp(0.0, 1.0);
+      final paint = Paint()
+        ..color = Colors.green.shade400
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 20
+        ..strokeCap = StrokeCap.round;
+
+      // Start from left (π) and move clockwise toward center
+      canvas.drawArc(
+        rect,
+        math.pi, // leftmost
+        math.pi / 2 * progress, // up to halfway
+        false,
+        paint,
+      );
+    }
+
+    // --- Surplus section (right side, orange) ---
+    if (surplusValue > 0) {
+      final progress = (surplusValue / maxValue).clamp(0.0, 1.0);
+      final paint = Paint()
+        ..color = Colors.orange.shade400
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 20
+        ..strokeCap = StrokeCap.round;
+
+      // Start from center (π/2) and move clockwise to rightmost
+      canvas.drawArc(
+        rect,
+        math.pi / 2, // middle of the gauge
+        math.pi / 2 * progress, // right side arc
+        false,
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(CalorieGaugePainter oldDelegate) {
+    return oldDelegate.deficitValue != deficitValue ||
+        oldDelegate.surplusValue != surplusValue ||
+        oldDelegate.maxValue != maxValue;
   }
 }

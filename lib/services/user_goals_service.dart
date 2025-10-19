@@ -14,6 +14,7 @@ class UserGoals {
   final int waterGlassesTarget;
   final int proteinGramsTarget;
   final GoalPlan plan;
+  final Map<String, int> waterIntake; // date -> count
 
   const UserGoals({
     required this.caloriesTarget,
@@ -22,6 +23,7 @@ class UserGoals {
     required this.waterGlassesTarget,
     required this.proteinGramsTarget,
     this.plan = GoalPlan.maintenance,
+    this.waterIntake = const {},
   });
 
   UserGoals copyWith({
@@ -31,6 +33,7 @@ class UserGoals {
     int? waterGlassesTarget,
     int? proteinGramsTarget,
     GoalPlan? plan,
+    Map<String, int>? waterIntake,
   }) {
     return UserGoals(
       caloriesTarget: caloriesTarget ?? this.caloriesTarget,
@@ -40,6 +43,7 @@ class UserGoals {
       waterGlassesTarget: waterGlassesTarget ?? this.waterGlassesTarget,
       proteinGramsTarget: proteinGramsTarget ?? this.proteinGramsTarget,
       plan: plan ?? this.plan,
+      waterIntake: waterIntake ?? this.waterIntake,
     );
   }
 
@@ -51,6 +55,7 @@ class UserGoals {
       'waterGlassesTarget': waterGlassesTarget,
       'proteinGramsTarget': proteinGramsTarget,
       'plan': describeEnum(plan),
+      'waterIntake': waterIntake,
       'updatedAt': FieldValue.serverTimestamp(),
     };
   }
@@ -63,6 +68,7 @@ class UserGoals {
       'waterGlassesTarget': waterGlassesTarget,
       'proteinGramsTarget': proteinGramsTarget,
       'plan': describeEnum(plan),
+      'waterIntake': waterIntake,
     };
   }
 
@@ -74,6 +80,7 @@ class UserGoals {
       waterGlassesTarget: (map['waterGlassesTarget'] ?? 8) as int,
       proteinGramsTarget: (map['proteinGramsTarget'] ?? 60) as int,
       plan: _planFromString(map['plan'] as String?),
+      waterIntake: Map<String, int>.from(map['waterIntake'] ?? {}),
     );
   }
 
@@ -202,5 +209,48 @@ class UserGoalsService {
       case GoalPlan.custom:
         return (base ?? UserGoals.defaults).copyWith(plan: GoalPlan.custom);
     }
+  }
+
+  // Water intake methods
+  Future<int> getWaterCountForDate(String date) async {
+    final goals = await getGoalsOnce();
+    return goals.waterIntake[date] ?? 0;
+  }
+
+  Stream<int> getWaterCountStream(String date) {
+    final ref = _goalsDocRef;
+    if (ref == null) {
+      return Stream.fromFuture(getWaterCountForDate(date));
+    }
+    return ref.snapshots().map((snap) {
+      if (snap.exists && snap.data() != null) {
+        final goals = UserGoals.fromMap(snap.data()!);
+        return goals.waterIntake[date] ?? 0;
+      }
+      return 0;
+    });
+  }
+
+  Future<void> setWaterCount(String date, int count) async {
+    final currentGoals = await getGoalsOnce();
+    final updatedWaterIntake = Map<String, int>.from(currentGoals.waterIntake);
+    updatedWaterIntake[date] = count;
+
+    final updatedGoals = currentGoals.copyWith(waterIntake: updatedWaterIntake);
+    await saveGoals(updatedGoals);
+  }
+
+  Future<int> incrementWater(String date, {int delta = 1}) async {
+    final current = await getWaterCountForDate(date);
+    final next = current + delta;
+    await setWaterCount(date, next);
+    return next;
+  }
+
+  Future<int> decrementWater(String date, {int delta = 1}) async {
+    final current = await getWaterCountForDate(date);
+    final next = current - delta;
+    await setWaterCount(date, next < 0 ? 0 : next);
+    return next;
   }
 }
