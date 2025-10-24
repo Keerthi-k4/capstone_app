@@ -13,6 +13,9 @@ class UserGoals {
   final int exerciseMinutesTarget;
   final int waterGlassesTarget;
   final int proteinGramsTarget;
+  final int carbsGramsTarget;
+  final int fatsGramsTarget;
+  final int fiberGramsTarget;
   final GoalPlan plan;
   final Map<String, int> waterIntake; // date -> count
 
@@ -22,6 +25,9 @@ class UserGoals {
     required this.exerciseMinutesTarget,
     required this.waterGlassesTarget,
     required this.proteinGramsTarget,
+    required this.carbsGramsTarget,
+    required this.fatsGramsTarget,
+    required this.fiberGramsTarget,
     this.plan = GoalPlan.maintenance,
     this.waterIntake = const {},
   });
@@ -32,6 +38,9 @@ class UserGoals {
     int? exerciseMinutesTarget,
     int? waterGlassesTarget,
     int? proteinGramsTarget,
+    int? carbsGramsTarget,
+    int? fatsGramsTarget,
+    int? fiberGramsTarget,
     GoalPlan? plan,
     Map<String, int>? waterIntake,
   }) {
@@ -42,6 +51,9 @@ class UserGoals {
           exerciseMinutesTarget ?? this.exerciseMinutesTarget,
       waterGlassesTarget: waterGlassesTarget ?? this.waterGlassesTarget,
       proteinGramsTarget: proteinGramsTarget ?? this.proteinGramsTarget,
+      carbsGramsTarget: carbsGramsTarget ?? this.carbsGramsTarget,
+      fatsGramsTarget: fatsGramsTarget ?? this.fatsGramsTarget,
+      fiberGramsTarget: fiberGramsTarget ?? this.fiberGramsTarget,
       plan: plan ?? this.plan,
       waterIntake: waterIntake ?? this.waterIntake,
     );
@@ -54,6 +66,9 @@ class UserGoals {
       'exerciseMinutesTarget': exerciseMinutesTarget,
       'waterGlassesTarget': waterGlassesTarget,
       'proteinGramsTarget': proteinGramsTarget,
+      'carbsGramsTarget': carbsGramsTarget,
+      'fatsGramsTarget': fatsGramsTarget,
+      'fiberGramsTarget': fiberGramsTarget,
       'plan': describeEnum(plan),
       'waterIntake': waterIntake,
       'updatedAt': FieldValue.serverTimestamp(),
@@ -67,6 +82,9 @@ class UserGoals {
       'exerciseMinutesTarget': exerciseMinutesTarget,
       'waterGlassesTarget': waterGlassesTarget,
       'proteinGramsTarget': proteinGramsTarget,
+      'carbsGramsTarget': carbsGramsTarget,
+      'fatsGramsTarget': fatsGramsTarget,
+      'fiberGramsTarget': fiberGramsTarget,
       'plan': describeEnum(plan),
       'waterIntake': waterIntake,
     };
@@ -79,6 +97,9 @@ class UserGoals {
       exerciseMinutesTarget: (map['exerciseMinutesTarget'] ?? 30) as int,
       waterGlassesTarget: (map['waterGlassesTarget'] ?? 8) as int,
       proteinGramsTarget: (map['proteinGramsTarget'] ?? 60) as int,
+      carbsGramsTarget: (map['carbsGramsTarget'] ?? 250) as int,
+      fatsGramsTarget: (map['fatsGramsTarget'] ?? 65) as int,
+      fiberGramsTarget: (map['fiberGramsTarget'] ?? 25) as int,
       plan: _planFromString(map['plan'] as String?),
       waterIntake: Map<String, int>.from(map['waterIntake'] ?? {}),
     );
@@ -110,6 +131,9 @@ class UserGoals {
     exerciseMinutesTarget: 30,
     waterGlassesTarget: 8,
     proteinGramsTarget: 60,
+    carbsGramsTarget: 250,
+    fatsGramsTarget: 65,
+    fiberGramsTarget: 25,
     plan: GoalPlan.maintenance,
   );
 }
@@ -184,6 +208,9 @@ class UserGoalsService {
           plan: GoalPlan.weightLoss,
           caloriesTarget: 2000,
           proteinGramsTarget: 80,
+          carbsGramsTarget: 200,
+          fatsGramsTarget: 55,
+          fiberGramsTarget: 28,
           stepsTarget: 10000,
           exerciseMinutesTarget: 35,
           waterGlassesTarget: 8,
@@ -193,6 +220,9 @@ class UserGoalsService {
           plan: GoalPlan.muscleBuilding,
           caloriesTarget: 2800,
           proteinGramsTarget: 120,
+          carbsGramsTarget: 300,
+          fatsGramsTarget: 75,
+          fiberGramsTarget: 30,
           stepsTarget: 8000,
           exerciseMinutesTarget: 45,
           waterGlassesTarget: 10,
@@ -202,6 +232,9 @@ class UserGoalsService {
           plan: GoalPlan.maintenance,
           caloriesTarget: 2400,
           proteinGramsTarget: 80,
+          carbsGramsTarget: 250,
+          fatsGramsTarget: 65,
+          fiberGramsTarget: 25,
           stepsTarget: 9000,
           exerciseMinutesTarget: 30,
           waterGlassesTarget: 8,

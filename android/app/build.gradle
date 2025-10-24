@@ -26,7 +26,8 @@ android {
         // ✅ UPDATED applicationId
         applicationId = "com.capstone.fitnessdiet"
 
-        minSdkVersion flutter.minSdkVersion
+        // Health Connect requires minimum SDK 26
+        minSdkVersion 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -51,6 +52,12 @@ dependencies {
     implementation 'com.google.firebase:firebase-analytics'
     // Multidex support
     implementation 'androidx.multidex:multidex:2.0.1'
+    
+    // Health Connect
+    implementation "androidx.health.connect:connect-client:1.1.0-alpha07"
+    
+    // Coroutines for async operations
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
 }
 
 // ✅ Google services plugin application

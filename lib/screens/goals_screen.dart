@@ -18,6 +18,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
   final _exerciseCtrl = TextEditingController();
   final _waterCtrl = TextEditingController();
   final _proteinCtrl = TextEditingController();
+  final _carbsCtrl = TextEditingController();
+  final _fatsCtrl = TextEditingController();
+  final _fiberCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -40,6 +43,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
     _exerciseCtrl.text = goals.exerciseMinutesTarget.toString();
     _waterCtrl.text = goals.waterGlassesTarget.toString();
     _proteinCtrl.text = goals.proteinGramsTarget.toString();
+    _carbsCtrl.text = goals.carbsGramsTarget.toString();
+    _fatsCtrl.text = goals.fatsGramsTarget.toString();
+    _fiberCtrl.text = goals.fiberGramsTarget.toString();
   }
 
   Future<void> _applyPlan(GoalPlan plan) async {
@@ -61,6 +67,12 @@ class _GoalsScreenState extends State<GoalsScreen> {
           int.tryParse(_waterCtrl.text) ?? _goals!.waterGlassesTarget,
       proteinGramsTarget:
           int.tryParse(_proteinCtrl.text) ?? _goals!.proteinGramsTarget,
+      carbsGramsTarget:
+          int.tryParse(_carbsCtrl.text) ?? _goals!.carbsGramsTarget,
+      fatsGramsTarget:
+          int.tryParse(_fatsCtrl.text) ?? _goals!.fatsGramsTarget,
+      fiberGramsTarget:
+          int.tryParse(_fiberCtrl.text) ?? _goals!.fiberGramsTarget,
       plan: GoalPlan.custom,
     );
 
@@ -82,6 +94,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
     _exerciseCtrl.dispose();
     _waterCtrl.dispose();
     _proteinCtrl.dispose();
+    _carbsCtrl.dispose();
+    _fatsCtrl.dispose();
+    _fiberCtrl.dispose();
     super.dispose();
   }
 
@@ -120,6 +135,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
                   _numberField('Exercise minutes', _exerciseCtrl),
                   _numberField('Water (glasses)', _waterCtrl),
                   _numberField('Protein (g)', _proteinCtrl),
+                  _numberField('Carbohydrates (g)', _carbsCtrl),
+                  _numberField('Fats (g)', _fatsCtrl),
+                  _numberField('Fiber (g)', _fiberCtrl),
                   const SizedBox(height: 24),
                   SizedBox(
                     width: double.infinity,

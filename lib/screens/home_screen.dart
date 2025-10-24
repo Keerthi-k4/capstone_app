@@ -7,6 +7,7 @@ import 'diet_plan_screen.dart';
 import 'goals_screen.dart';
 import 'package:attempt2/services/user_goals_service.dart';
 import 'package:attempt2/services/daily_nutrition_service.dart';
+import 'package:attempt2/services/health_connect_service.dart';
 import 'dart:math' as math;
 
 class HomeScreen extends StatefulWidget {
@@ -21,8 +22,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final UserGoalsService _goalsService = UserGoalsService();
   UserGoals _goals = UserGoals.defaults;
   final DailyNutritionService _nutritionService = DailyNutritionService();
+  final HealthConnectService _healthConnectService = HealthConnectService();
   int _todayWater = 0;
   DailyNutrition? _todayNutrition;
+  bool _isDemoMode = true; // Default to demo mode
 
   @override
   void initState() {
@@ -30,6 +33,12 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadGoals();
     _loadWater();
     _loadNutrition();
+    _loadHealthMode();
+  }
+
+  Future<void> _loadHealthMode() async {
+    final isDemo = await _healthConnectService.isDemoMode();
+    if (mounted) setState(() => _isDemoMode = isDemo);
   }
 
   Future<void> _loadGoals() async {
@@ -48,6 +57,154 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadNutrition() async {
     final nutrition = await _nutritionService.getTodayNutrition();
     if (mounted) setState(() => _todayNutrition = nutrition);
+  }
+
+  Future<void> _showModeToggleDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Health Data Mode'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Choose how to track your activity:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.science_outlined, color: Colors.orange),
+                title: const Text('Demo Mode'),
+                subtitle: const Text('Uses hardcoded sample data'),
+                selected: _isDemoMode,
+                selectedTileColor: Colors.orange.withOpacity(0.1),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                onTap: () => Navigator.of(ctx).pop(true),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                leading: const Icon(Icons.watch_outlined, color: Colors.green),
+                title: const Text('Actual Mode'),
+                subtitle: const Text('Uses Health Connect & Wear OS'),
+                selected: !_isDemoMode,
+                selectedTileColor: Colors.green.withOpacity(0.1),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                onTap: () => Navigator.of(ctx).pop(false),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(null),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result != null) {
+      // Update mode
+      await _healthConnectService.setDemoMode(result);
+      
+      if (!result) {
+        // Switching to actual mode - check availability and permissions
+        final isAvailable = await _healthConnectService.isHealthConnectAvailable();
+        if (!isAvailable) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Health Connect not available on this device. Install from Play Store.',
+                ),
+                duration: Duration(seconds: 5),
+              ),
+            );
+          }
+          // Revert to demo mode
+          await _healthConnectService.setDemoMode(true);
+          if (mounted) setState(() => _isDemoMode = true);
+          return;
+        }
+
+        final hasPermissions = await _healthConnectService.hasPermissions();
+        if (!hasPermissions) {
+          if (mounted) {
+            final requestPermissions = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Permissions Required'),
+                content: const Text(
+                  'Health Connect needs permissions to read your activity data.\n\n'
+                  'You\'ll be taken to Health Connect settings where you can grant permissions for:\n'
+                  '• Steps\n'
+                  '• Heart Rate & Resting Heart Rate\n'
+                  '• Calories Burned (Active & Total)\n'
+                  '• Exercise Sessions\n'
+                  '• Oxygen Saturation (SpO2)\n'
+                  '• Sleep\n'
+                  '• Respiratory Rate (for stress assessment)\n\n'
+                  'After granting permissions, return to the app.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(false),
+                    child: const Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(true),
+                    child: const Text('Open Settings'),
+                  ),
+                ],
+              ),
+            );
+
+            if (requestPermissions == true) {
+              final granted = await _healthConnectService.requestPermissions();
+              if (!granted) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Permissions not granted. Using demo mode.',
+                      ),
+                    ),
+                  );
+                }
+                // Revert to demo mode
+                await _healthConnectService.setDemoMode(true);
+                if (mounted) setState(() => _isDemoMode = true);
+                return;
+              }
+            } else {
+              // User cancelled permission request, revert to demo mode
+              await _healthConnectService.setDemoMode(true);
+              if (mounted) setState(() => _isDemoMode = true);
+              return;
+            }
+          }
+        }
+      }
+
+      // Update state and reload data
+      if (mounted) {
+        setState(() => _isDemoMode = result);
+        await _loadNutrition();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result ? 'Switched to Demo Mode' : 'Switched to Actual Mode',
+            ),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _openWaterEditor() async {
@@ -527,7 +684,122 @@ class _HomeScreenState extends State<HomeScreen> {
 
               const SizedBox(height: 16),
 
-              // Additional Goals
+              // Demo/Actual Mode Toggle Button
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: Icon(_isDemoMode
+                      ? Icons.science_outlined
+                      : Icons.watch_outlined),
+                  label: Text(_isDemoMode ? 'Demo Mode' : 'Actual Mode'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _isDemoMode ? Colors.orange : Colors.green,
+                    side: BorderSide(
+                      color: _isDemoMode ? Colors.orange : Colors.green,
+                    ),
+                  ),
+                  onPressed: () async {
+                    await _showModeToggleDialog();
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Additional Health Metrics from Health Connect
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Health Metrics',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      // First row: Heart Rate and SpO2
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildMetricTile(
+                              icon: Icons.favorite,
+                              iconColor: Colors.red,
+                              label: 'Heart Rate',
+                              value: _todayNutrition != null &&
+                                      _todayNutrition!.heartRate > 0
+                                  ? '${_todayNutrition!.heartRate}'
+                                  : '--',
+                              unit: 'bpm',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildMetricTile(
+                              icon: Icons.water_drop,
+                              iconColor: Colors.blue,
+                              label: 'SpO2',
+                              value: _todayNutrition != null &&
+                                      _todayNutrition!.oxygenSaturation > 0
+                                  ? _todayNutrition!.oxygenSaturation
+                                              .toStringAsFixed(1)
+                                  : '--',
+                              unit: '%',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      // Second row: Sleep and Stress
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildMetricTile(
+                              icon: Icons.bedtime,
+                              iconColor: Colors.purple,
+                              label: 'Sleep',
+                              value: _todayNutrition != null &&
+                                      _todayNutrition!.sleepHours > 0
+                                  ? _todayNutrition!.sleepHours
+                                              .toStringAsFixed(1)
+                                  : '--',
+                              unit: 'hours',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildMetricTile(
+                              icon: Icons.psychology,
+                              iconColor: _todayNutrition != null
+                                  ? (_todayNutrition!.stressLevel < 25
+                                      ? Colors.green
+                                      : _todayNutrition!.stressLevel < 50
+                                          ? Colors.blue
+                                          : _todayNutrition!.stressLevel < 75
+                                              ? Colors.orange
+                                              : Colors.red)
+                                  : Colors.grey,
+                              label: 'Stress',
+                              value: _todayNutrition != null &&
+                                      _todayNutrition!.stressLevel > 0
+                                  ? _todayNutrition!.stressDescription
+                                  : '--',
+                              unit: '',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Additional Goals - Row 1: Water and Protein
               Row(
                 children: [
                   Expanded(
@@ -562,6 +834,66 @@ class _HomeScreenState extends State<HomeScreen> {
                       Icons.egg,
                     ),
                   ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Macros - Row 2: Carbs and Fats
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildGoalCard(
+                      'Carbs',
+                      _todayNutrition != null
+                          ? '${_todayNutrition!.carbsConsumed}'
+                          : '0',
+                      '${_goals.carbsGramsTarget}g',
+                      _todayNutrition != null
+                          ? _todayNutrition!.carbsProgress
+                          : 0.0,
+                      Colors.amber[700]!,
+                      Icons.grain,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildGoalCard(
+                      'Fats',
+                      _todayNutrition != null
+                          ? '${_todayNutrition!.fatsConsumed}'
+                          : '0',
+                      '${_goals.fatsGramsTarget}g',
+                      _todayNutrition != null
+                          ? _todayNutrition!.fatsProgress
+                          : 0.0,
+                      Colors.yellow[800]!,
+                      Icons.oil_barrel,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Macros - Row 3: Fiber
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildGoalCard(
+                      'Fiber',
+                      _todayNutrition != null
+                          ? '${_todayNutrition!.fiberConsumed}'
+                          : '0',
+                      '${_goals.fiberGramsTarget}g',
+                      _todayNutrition != null
+                          ? _todayNutrition!.fiberProgress
+                          : 0.0,
+                      Colors.green[700]!,
+                      Icons.grass,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  // Empty space for symmetry
+                  Expanded(child: Container()),
                 ],
               ),
               const SizedBox(height: 16),
@@ -717,6 +1049,66 @@ class _HomeScreenState extends State<HomeScreen> {
               fontSize: 10,
               color: Colors.grey[500],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricTile({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required String value,
+    required String unit,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: iconColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: iconColor, size: 20),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[700],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: iconColor,
+                ),
+              ),
+              if (unit.isNotEmpty) ...[
+                const SizedBox(width: 4),
+                Text(
+                  unit,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ],
           ),
         ],
       ),
