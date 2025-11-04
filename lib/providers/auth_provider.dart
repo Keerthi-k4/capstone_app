@@ -417,6 +417,7 @@ class AuthProvider with ChangeNotifier {
     double? weight,
     double? height,
     String? gender,
+    Map<String, dynamic>? healthMetrics,
   }) async {
     if (_currentUser == null) return false;
 
@@ -424,13 +425,13 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      // Create updated user
       final updatedUser = _currentUser!.copyWith(
         name: name,
         age: age,
         weight: weight,
         height: height,
         gender: gender,
+        healthMetrics: healthMetrics ?? _currentUser!.healthMetrics,
       );
 
       if (_useFirebase) {

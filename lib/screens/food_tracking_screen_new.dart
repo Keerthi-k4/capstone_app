@@ -8,6 +8,12 @@ import '../services/image_capture_service.dart';
 import '../services/ml_food_recognition_service.dart';
 import 'food_confirmation_screen.dart';
 import 'manual_food_search_screen.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
+import 'package:dio/dio.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class FoodTrackingScreen extends StatefulWidget {
   const FoodTrackingScreen({super.key});
@@ -380,5 +386,232 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
         SnackBar(content: Text('Deleted "${log.name}"')),
       );
     }
+  }
+}
+
+class ExerciseTrackingScreen extends StatefulWidget {
+  const ExerciseTrackingScreen({Key? key}) : super(key: key);
+
+  @override
+  State<ExerciseTrackingScreen> createState() => _ExerciseTrackingScreenState();
+}
+
+class _ExerciseTrackingScreenState extends State<ExerciseTrackingScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final List<String> _muscleGroups = [
+    'Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Legs', 'Abs', 'Glutes', 'Other'
+  ];
+  List<String> _selectedMuscleGroups = [];
+  String? _workoutType; // 'Weights' or 'Bodyweight'
+  final _durationController = TextEditingController();
+  String? _workoutPlanResult;
+
+  @override
+  void dispose() {
+    _durationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Track Exercise'),
+        backgroundColor: Theme.of(context).primaryColor,
+      ),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: EdgeInsets.only(
+                left: 24,
+                right: 24,
+                top: 24,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: 600),
+                  child: Card(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: 4,
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'Muscle Group(s)',
+                                border: OutlineInputBorder(),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  hint: const Text('Select muscle group'),
+                                  value: null,
+                                  items: _muscleGroups
+                                      .where((mg) => !_selectedMuscleGroups.contains(mg))
+                                      .map((group) => DropdownMenuItem(
+                                            value: group,
+                                            child: Text(group),
+                                          ))
+                                      .toList(),
+                                  onChanged: (val) {
+                                    if (val != null && !_selectedMuscleGroups.contains(val)) {
+                                      setState(() => _selectedMuscleGroups.add(val));
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                            if (_selectedMuscleGroups.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8.0),
+                                child: Wrap(
+                                  spacing: 8,
+                                  children: _selectedMuscleGroups
+                                      .map((mg) => Chip(
+                                            label: Text(mg),
+                                            onDeleted: () {
+                                              setState(() => _selectedMuscleGroups.remove(mg));
+                                            },
+                                          ))
+                                      .toList(),
+                                ),
+                              ),
+                            const SizedBox(height: 20),
+                            DropdownButtonFormField<String>(
+                              value: _workoutType,
+                              isExpanded: true,
+                              items: const [
+                                DropdownMenuItem(value: 'Weights', child: Text('Weights')),
+                                DropdownMenuItem(value: 'Bodyweight', child: Text('Bodyweight')),
+                              ],
+                              onChanged: (val) => setState(() => _workoutType = val),
+                              decoration: const InputDecoration(
+                                labelText: 'Workout Type',
+                                border: OutlineInputBorder(),
+                              ),
+                              validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                            ),
+                            const SizedBox(height: 20),
+                            TextFormField(
+                              controller: _durationController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'Duration (minutes)',
+                                border: OutlineInputBorder(),
+                              ),
+                              validator: (v) => (v == null || v.isEmpty || int.tryParse(v) == null || int.parse(v) <= 0)
+                                  ? 'Enter valid duration' : null,
+                            ),
+                            const SizedBox(height: 30),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Theme.of(context).primaryColor,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                onPressed: () async {
+                                  if (_formKey.currentState!.validate()) {
+                                    if (_selectedMuscleGroups.isEmpty) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Please select at least one muscle group')));
+                                      return;
+                                    }
+                                    showDialog(
+                                      context: context,
+                                      barrierDismissible: false,
+                                      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+                                    );
+
+                                    final profile = Provider.of<AuthProvider>(context, listen: false).currentUser;
+                                    final groqApiKey = dotenv.env['WORKOUT_API_KEY'];
+
+                                    final prompt = """
+You are a certified fitness trainer. Create a safe, personalized workout plan ONLY as a numbered list based on:
+
+- Age:  ${profile?.age ?? 'unknown'}
+- Gender: ${profile?.gender ?? 'unknown'}
+- Weight: ${profile?.weight ?? 'unknown'}
+- Target Weight: ${profile?.healthMetrics?['targetWeight'] ?? 'unknown'}
+- Medical Concerns/Injuries: ${profile?.healthMetrics?['medicalConcerns'] ?? 'none'}
+- Muscle Groups: ${_selectedMuscleGroups.join(", ")}
+- Workout Type: $_workoutType
+- Duration: ${_durationController.text} minutes
+
+The plan should be suitable for a beginner unless otherwise suggested by profile. Make sure to adjust for medical issues, if any.
+Return ONLY the plan as numbered steps.
+""";
+
+                                    String result = 'Failed to connect to Groq API.';
+                                    try {
+                                      final response = await http.post(
+                                        Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
+                                        headers: {
+                                          'Authorization': 'Bearer $groqApiKey',
+                                          'Content-Type': 'application/json',
+                                        },
+                                        body: json.encode({
+                                          "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+                                          "messages": [
+                                            {"role": "user", "content": prompt}
+                                          ],
+                                          "max_tokens": 500,
+                                          "temperature": 0.7,
+                                        }),
+                                      );
+
+                                      if (response.statusCode == 200) {
+                                        final data = json.decode(response.body);
+                                        result = data['choices'][0]['message']['content'].toString();
+                                      } else {
+                                        result = "Groq API error: ${response.body}";
+                                      }
+                                    } catch (e) {
+                                      result = "Failed to contact Groq API: $e";
+                                    }
+
+                                    if (mounted) Navigator.of(context).pop();
+                                    if (mounted) {
+                                      setState(() {
+                                        _workoutPlanResult = result;
+                                      });
+                                    }
+                                  }
+                                },
+                                child: const Text('Create Workout', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                            if (_workoutPlanResult != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 24.0),
+                                child: Card(
+                                  elevation: 4,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(20),
+                                    child: Text(
+                                      _workoutPlanResult!,
+                                      style: const TextStyle(fontSize: 16),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 }

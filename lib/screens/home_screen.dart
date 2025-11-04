@@ -9,6 +9,7 @@ import 'package:attempt2/services/user_goals_service.dart';
 import 'package:attempt2/services/daily_nutrition_service.dart';
 import 'package:attempt2/services/health_connect_service.dart';
 import 'dart:math' as math;
+import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -505,14 +506,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   Expanded(
                     child: _buildActionCard(
                       context,
-                      'Track Exercise',
+                      'Plan Exercise',
                       Icons.fitness_center,
                       Colors.blue,
                       () {
-                        // TODO: Navigate to exercise tracking screen
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Exercise tracking coming soon!'),
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const ExerciseTrackingScreen(),
                           ),
                         );
                       },
@@ -526,11 +526,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       Icons.person,
                       Colors.purple,
                       () {
-                        // TODO: Navigate to profile screen
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Profile screen coming soon!'),
-                          ),
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const ProfileScreen()),
                         );
                       },
                     ),
