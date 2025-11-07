@@ -124,10 +124,10 @@ class DailyNutritionService {
     // Get food logs for today
     final foodLogs = await _foodService.getLogsByDate(today);
     final caloriesConsumed = foodLogs.fold(0, (sum, log) => sum + log.calories);
-    final proteinConsumed = _estimateProteinFromLogs(foodLogs);
-    final carbsConsumed = _estimateCarbsFromLogs(foodLogs);
-    final fatsConsumed = _estimateFatsFromLogs(foodLogs);
-    final fiberConsumed = _estimateFiberFromLogs(foodLogs);
+    final proteinConsumed = foodLogs.fold(0.0, (sum, log) => sum + log.protein).round();
+    final carbsConsumed = foodLogs.fold(0.0, (sum, log) => sum + log.carbs).round();
+    final fatsConsumed = foodLogs.fold(0.0, (sum, log) => sum + log.fat).round();
+    final fiberConsumed = foodLogs.fold(0.0, (sum, log) => sum + log.fiber).round();
 
     // Get water intake
     final waterGlasses = await _goalsService.getWaterCountForDate(today);
@@ -183,105 +183,7 @@ class DailyNutritionService {
         .asyncMap((_) => getTodayNutrition());
   }
 
-  int _estimateProteinFromLogs(List<FoodLog> logs) {
-    // Simple protein estimation based on food names
-    int totalProtein = 0;
-    for (final log in logs) {
-      final name = log.name.toLowerCase();
-      if (name.contains('chicken') || name.contains('poultry')) {
-        totalProtein += (log.calories * 0.25).round(); // ~25% protein
-      } else if (name.contains('fish') ||
-          name.contains('salmon') ||
-          name.contains('tuna')) {
-        totalProtein += (log.calories * 0.22).round(); // ~22% protein
-      } else if (name.contains('egg')) {
-        totalProtein += (log.calories * 0.35).round(); // ~35% protein
-      } else if (name.contains('dal') ||
-          name.contains('lentil') ||
-          name.contains('bean')) {
-        totalProtein += (log.calories * 0.20).round(); // ~20% protein
-      } else if (name.contains('paneer') || name.contains('cheese')) {
-        totalProtein += (log.calories * 0.25).round(); // ~25% protein
-      } else if (name.contains('milk') || name.contains('yogurt')) {
-        totalProtein += (log.calories * 0.15).round(); // ~15% protein
-      } else if (name.contains('rice') ||
-          name.contains('bread') ||
-          name.contains('roti')) {
-        totalProtein += (log.calories * 0.08).round(); // ~8% protein
-      } else {
-        totalProtein += (log.calories * 0.10).round(); // ~10% default
-      }
-    }
-    return totalProtein;
-  }
 
-  int _estimateCarbsFromLogs(List<FoodLog> logs) {
-    // Estimate carbs from food logs (typically 45-65% of calories for carb-rich foods)
-    int totalCarbs = 0;
-    for (final log in logs) {
-      final name = log.name.toLowerCase();
-      if (name.contains('rice') || name.contains('pasta') || name.contains('noodle')) {
-        totalCarbs += (log.calories * 0.55 / 4).round(); // ~55% calories from carbs, 4 cal/g
-      } else if (name.contains('bread') || name.contains('roti') || name.contains('chapati')) {
-        totalCarbs += (log.calories * 0.50 / 4).round();
-      } else if (name.contains('fruit') || name.contains('banana') || name.contains('apple')) {
-        totalCarbs += (log.calories * 0.90 / 4).round(); // Fruits are mostly carbs
-      } else if (name.contains('potato') || name.contains('sweet potato')) {
-        totalCarbs += (log.calories * 0.75 / 4).round();
-      } else if (name.contains('dal') || name.contains('lentil') || name.contains('bean')) {
-        totalCarbs += (log.calories * 0.45 / 4).round();
-      } else {
-        totalCarbs += (log.calories * 0.40 / 4).round(); // Default 40% carbs
-      }
-    }
-    return totalCarbs;
-  }
-
-  int _estimateFatsFromLogs(List<FoodLog> logs) {
-    // Estimate fats from food logs (typically 20-35% of calories for fatty foods)
-    int totalFats = 0;
-    for (final log in logs) {
-      final name = log.name.toLowerCase();
-      if (name.contains('oil') || name.contains('butter') || name.contains('ghee')) {
-        totalFats += (log.calories * 0.95 / 9).round(); // Almost pure fat, 9 cal/g
-      } else if (name.contains('nuts') || name.contains('almond') || name.contains('cashew')) {
-        totalFats += (log.calories * 0.70 / 9).round();
-      } else if (name.contains('avocado')) {
-        totalFats += (log.calories * 0.75 / 9).round();
-      } else if (name.contains('cheese') || name.contains('paneer')) {
-        totalFats += (log.calories * 0.60 / 9).round();
-      } else if (name.contains('fish') || name.contains('salmon')) {
-        totalFats += (log.calories * 0.50 / 9).round();
-      } else if (name.contains('chicken') || name.contains('meat')) {
-        totalFats += (log.calories * 0.30 / 9).round();
-      } else {
-        totalFats += (log.calories * 0.25 / 9).round(); // Default 25% fats
-      }
-    }
-    return totalFats;
-  }
-
-  int _estimateFiberFromLogs(List<FoodLog> logs) {
-    // Estimate fiber from food logs (roughly based on food type)
-    int totalFiber = 0;
-    for (final log in logs) {
-      final name = log.name.toLowerCase();
-      if (name.contains('lentil') || name.contains('dal') || name.contains('bean')) {
-        totalFiber += (log.calories * 0.03).round(); // High fiber
-      } else if (name.contains('vegetable') || name.contains('broccoli') || name.contains('spinach')) {
-        totalFiber += (log.calories * 0.08).round(); // Very high fiber per calorie
-      } else if (name.contains('fruit') || name.contains('apple') || name.contains('banana')) {
-        totalFiber += (log.calories * 0.02).round();
-      } else if (name.contains('whole wheat') || name.contains('brown rice') || name.contains('oats')) {
-        totalFiber += (log.calories * 0.025).round();
-      } else if (name.contains('bread') || name.contains('roti') || name.contains('chapati')) {
-        totalFiber += (log.calories * 0.015).round();
-      } else {
-        totalFiber += (log.calories * 0.01).round(); // Default low fiber
-      }
-    }
-    return totalFiber;
-  }
 
   Future<Map<String, dynamic>> _getTodayActivity(String date) async {
     try {

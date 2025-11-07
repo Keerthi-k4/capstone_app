@@ -129,22 +129,48 @@ class _DietPlansScreenState extends State<DietPlansScreen> {
       String recId, bool currentAccepted) async {
     try {
       final newAccepted = !currentAccepted;
+      
+      if (newAccepted) {
+        // When accepting, add it to food logs
+        final recommendation = _recommendations.firstWhere((r) => r.id == recId);
+        
+        // Create a food log from the recommendation (userId will be set automatically)
+        final foodLog = FoodLog(
+          name: recommendation.item,
+          calories: recommendation.calories,
+          mealType: recommendation.mealType,
+          date: widget.date,
+          quantity: recommendation.quantity,
+          userId: '', // Will be set by insertLog method
+        );
+        
+        // Add to food logs
+        await _firestoreService.insertLog(foodLog);
+        print('✅ Added recommendation to food logs: ${recommendation.item}');
+      }
+      
+      // Update the accepted status
       await _firestoreService
           .updateRecommendation(recId, {'accepted': newAccepted});
-      await _loadRecommendations();
+      
+      // Reload both logs and recommendations
+      await Future.wait([
+        _loadLogs(),
+        _loadRecommendations(),
+      ]);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(newAccepted
-                ? 'Recommendation accepted!'
+                ? 'Added to food logs!'
                 : 'Recommendation unmarked'),
             backgroundColor: newAccepted ? Colors.green : Colors.grey,
           ),
         );
       }
     } catch (e) {
-      print('Error updating recommendation: $e');
+      print('❌ Error updating recommendation: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -370,6 +396,8 @@ class _DietPlansScreenState extends State<DietPlansScreen> {
                     decoration: isAccepted ? TextDecoration.lineThrough : null,
                     color: isAccepted ? Colors.grey : null,
                   ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -388,31 +416,47 @@ class _DietPlansScreenState extends State<DietPlansScreen> {
                             color: Colors.blue[700],
                             fontStyle: FontStyle.italic,
                           ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                   ],
                 ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: Icon(
-                        isAccepted
-                            ? Icons.check_circle
-                            : Icons.check_circle_outline,
-                        color: isAccepted ? Colors.green : Colors.grey,
+                trailing: SizedBox(
+                  width: 96, // Fixed width to prevent overflow
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          isAccepted
+                              ? Icons.check_circle
+                              : Icons.check_circle_outline,
+                          color: isAccepted ? Colors.green : Colors.grey,
+                          size: 22,
+                        ),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 40,
+                          minHeight: 40,
+                        ),
+                        onPressed: () =>
+                            _toggleRecommendationAcceptance(recId, isAccepted),
+                        tooltip:
+                            isAccepted ? 'Mark as pending' : 'Accept & track',
                       ),
-                      onPressed: () =>
-                          _toggleRecommendationAcceptance(recId, isAccepted),
-                      tooltip:
-                          isAccepted ? 'Mark as pending' : 'Mark as accepted',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline, color: Colors.red),
-                      onPressed: () => _deleteRecommendation(recId, itemName),
-                      tooltip: 'Delete recommendation',
-                    ),
-                  ],
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.red, size: 22),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 40,
+                          minHeight: 40,
+                        ),
+                        onPressed: () => _deleteRecommendation(recId, itemName),
+                        tooltip: 'Delete recommendation',
+                      ),
+                    ],
+                  ),
                 ),
                 isThreeLine: rec.reasoning.isNotEmpty,
               ),

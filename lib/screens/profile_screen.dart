@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:attempt2/providers/auth_provider.dart';
-import 'package:attempt2/models/user_model.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -20,6 +19,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late TextEditingController _weightController;
   late TextEditingController _targetWeightController;
   late TextEditingController _medicalConcernsController;
+  
+  String? _selectedGender;
+  String? _selectedActivityLevel;
+  bool _useWatchData = false;
 
   @override
   void initState() {
@@ -33,9 +36,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _heightFeetController = TextEditingController(text: feet > 0 ? feet.toString() : '');
     _heightInchesController = TextEditingController(text: inches > 0 ? inches.toString() : '');
     _weightController = TextEditingController(text: user?.weight?.toString() ?? '');
-    // Assume a custom field in UserModel or use healthMetrics for 'targetWeight'
-    _targetWeightController = TextEditingController(text: user?.healthMetrics?['targetWeight']?.toString() ?? '');
-    _medicalConcernsController = TextEditingController(text: user?.healthMetrics?['medicalConcerns']?.toString() ?? '');
+    _targetWeightController = TextEditingController(text: user?.targetWeight?.toString() ?? '');
+    _medicalConcernsController = TextEditingController(text: user?.medicalConcerns ?? '');
+    _selectedGender = user?.gender;
+    _selectedActivityLevel = user?.activityLevel;
+    _useWatchData = user?.useWatchDataForTDEE ?? false;
   }
 
   @override
@@ -59,7 +64,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final int inches = int.tryParse(_heightInchesController.text.trim()) ?? 0;
     final double? weight = double.tryParse(_weightController.text.trim());
     final double? targetWeight = double.tryParse(_targetWeightController.text.trim());
-    final String medicalConcerns = _medicalConcernsController.text.trim();
+    final String? medicalConcerns = _medicalConcernsController.text.trim().isNotEmpty 
+        ? _medicalConcernsController.text.trim() 
+        : null;
     // Calculate height in cm
     double heightCm = feet * 30.48 + inches * 2.54;
 
@@ -68,28 +75,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
       age: age,
       weight: weight,
       height: heightCm > 0 ? heightCm : null,
+      gender: _selectedGender,
+      activityLevel: _selectedActivityLevel,
+      targetWeight: targetWeight,
+      medicalConcerns: medicalConcerns,
+      useWatchDataForTDEE: _useWatchData,
     );
 
     if (updated) {
-      // Save targetWeight in healthMetrics if available
-      var user = authProvider.currentUser;
-      if (user != null) {
-        final updatedHealthMetrics = {
-          ...?user.healthMetrics,
-          if (targetWeight != null) 'targetWeight': targetWeight,
-          'medicalConcerns': medicalConcerns,
-        };
-        await authProvider.updateUserProfile(
-          name: user.name,
-          age: user.age,
-          weight: user.weight,
-          height: user.height,
-          gender: user.gender,
-          healthMetrics: updatedHealthMetrics,
-        );
-      }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile saved!')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile saved to database!')));
         Navigator.of(context).pop();
       }
     } else {
@@ -103,10 +98,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    final user = authProvider.currentUser;
-    final bool needsProfile = (user?.name.isEmpty ?? true) || user?.age == null || user?.height == null || user?.weight == null;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profile'),
@@ -123,39 +114,89 @@ class _ProfileScreenState extends State<ProfileScreen> {
               padding: const EdgeInsets.all(20.0),
               child: Form(
                 key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildTextField(_nameController, 'Name', TextInputType.text),
-                    const SizedBox(height: 16),
-                    _buildTextField(_ageController, 'Age', TextInputType.number),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(child: _buildTextField(_heightFeetController, 'Height (ft)', TextInputType.number)),
-                        const SizedBox(width: 8),
-                        Expanded(child: _buildTextField(_heightInchesController, 'Height (in)', TextInputType.number)),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildTextField(_weightController, 'Weight (kg)', TextInputType.numberWithOptions(decimal: true)),
-                    const SizedBox(height: 16),
-                    _buildTextField(_targetWeightController, 'Target Weight (kg)', TextInputType.numberWithOptions(decimal: true)),
-                    const SizedBox(height: 16),
-                    _buildTextField(_medicalConcernsController, 'Injuries/Medical Concerns', TextInputType.multiline, maxLines: 3),
-                    const SizedBox(height: 24),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          backgroundColor: Theme.of(context).primaryColor,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildTextField(_nameController, 'Name', TextInputType.text),
+                      const SizedBox(height: 16),
+                      _buildTextField(_ageController, 'Age', TextInputType.number),
+                      const SizedBox(height: 16),
+                      // Gender dropdown
+                      DropdownButtonFormField<String>(
+                        value: _selectedGender,
+                        decoration: const InputDecoration(
+                          labelText: 'Gender',
+                          border: OutlineInputBorder(),
                         ),
-                        onPressed: _saveProfile,
-                        child: Text('Save', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        items: const [
+                          DropdownMenuItem(value: 'male', child: Text('Male')),
+                          DropdownMenuItem(value: 'female', child: Text('Female')),
+                        ],
+                        onChanged: (value) {
+                          setState(() => _selectedGender = value);
+                        },
+                        validator: (v) => v == null ? 'Required' : null,
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(child: _buildTextField(_heightFeetController, 'Height (ft)', TextInputType.number)),
+                          const SizedBox(width: 8),
+                          Expanded(child: _buildTextField(_heightInchesController, 'Height (in)', TextInputType.number)),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(_weightController, 'Weight (kg)', TextInputType.numberWithOptions(decimal: true)),
+                      const SizedBox(height: 16),
+                      _buildTextField(_targetWeightController, 'Target Weight (kg)', TextInputType.numberWithOptions(decimal: true)),
+                      const SizedBox(height: 16),
+                      // Activity level dropdown
+                      DropdownButtonFormField<String>(
+                        value: _selectedActivityLevel,
+                        decoration: const InputDecoration(
+                          labelText: 'Activity Level',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'sedentary', child: Text('Sedentary (little/no exercise)')),
+                          DropdownMenuItem(value: 'lightly_active', child: Text('Lightly Active (1-3 days/week)')),
+                          DropdownMenuItem(value: 'moderately_active', child: Text('Moderately Active (3-5 days/week)')),
+                          DropdownMenuItem(value: 'very_active', child: Text('Very Active (6-7 days/week)')),
+                          DropdownMenuItem(value: 'extremely_active', child: Text('Extremely Active (athlete)')),
+                        ],
+                        onChanged: (value) {
+                          setState(() => _selectedActivityLevel = value);
+                        },
+                        validator: (v) => v == null ? 'Required' : null,
+                      ),
+                      const SizedBox(height: 16),
+                      // Use watch data toggle
+                      SwitchListTile(
+                        title: const Text('Use Watch Data for TDEE'),
+                        subtitle: const Text('Use smart watch calories instead of calculated'),
+                        value: _useWatchData,
+                        onChanged: (value) {
+                          setState(() => _useWatchData = value);
+                        },
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(_medicalConcernsController, 'Injuries/Medical Concerns (Optional)', TextInputType.multiline, maxLines: 3, required: false),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            backgroundColor: Theme.of(context).primaryColor,
+                          ),
+                          onPressed: _saveProfile,
+                          child: const Text('Save to Database', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -165,7 +206,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label, TextInputType type, {int maxLines = 1}) {
+  Widget _buildTextField(TextEditingController controller, String label, TextInputType type, {int maxLines = 1, bool required = true}) {
     return TextFormField(
       controller: controller,
       keyboardType: type,
@@ -174,10 +215,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         labelText: label,
         border: const OutlineInputBorder(),
       ),
-      validator: (v) {
+      validator: required ? (v) {
         if ((v ?? '').trim().isEmpty) return 'Required';
         return null;
-      },
+      } : null,
     );
   }
 }

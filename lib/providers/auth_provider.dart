@@ -17,6 +17,7 @@ class AuthProvider with ChangeNotifier {
   // Firebase instances
   final firebase_auth.FirebaseAuth _auth = firebase_auth.FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // Dummy auth service for development
   final DummyAuthService _dummyAuth = DummyAuthService();
@@ -69,7 +70,7 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  /// Load user data from shared preferences
+  /// Load user data from shared preferences and Firestore
   Future<void> _loadUserFromPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -78,6 +79,24 @@ class AuthProvider with ChangeNotifier {
       if (userData != null) {
         _currentUser = UserModel.fromJsonString(userData);
         notifyListeners();
+        
+        // If using Firebase, also try to load from Firestore for latest data
+        if (_useFirebase && _auth.currentUser != null) {
+          final doc = await _firestore
+              .collection('users')
+              .doc(_auth.currentUser!.uid)
+              .get();
+          
+          if (doc.exists) {
+            final firestoreUser = UserModel.fromJson({
+              'id': doc.id,
+              ...doc.data()!,
+            });
+            _currentUser = firestoreUser;
+            await _saveUserToPrefs(firestoreUser);
+            notifyListeners();
+          }
+        }
       }
     } catch (e) {
       _error = "Failed to load user data: $e";
@@ -418,6 +437,10 @@ class AuthProvider with ChangeNotifier {
     double? height,
     String? gender,
     Map<String, dynamic>? healthMetrics,
+    String? activityLevel,
+    double? targetWeight,
+    String? medicalConcerns,
+    bool? useWatchDataForTDEE,
   }) async {
     if (_currentUser == null) return false;
 
@@ -432,6 +455,10 @@ class AuthProvider with ChangeNotifier {
         height: height,
         gender: gender,
         healthMetrics: healthMetrics ?? _currentUser!.healthMetrics,
+        activityLevel: activityLevel,
+        targetWeight: targetWeight,
+        medicalConcerns: medicalConcerns,
+        useWatchDataForTDEE: useWatchDataForTDEE,
       );
 
       if (_useFirebase) {
@@ -439,6 +466,12 @@ class AuthProvider with ChangeNotifier {
         if (name != null && name != _auth.currentUser?.displayName) {
           await _auth.currentUser?.updateDisplayName(name);
         }
+        
+        // Save to Firestore
+        await _firestore
+            .collection('users')
+            .doc(_currentUser!.id)
+            .set(updatedUser.toJson(), SetOptions(merge: true));
       } else {
         // Use dummy auth for development
         await _dummyAuth.updateUserProfile(updatedUser);

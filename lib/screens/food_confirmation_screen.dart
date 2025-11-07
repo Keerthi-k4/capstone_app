@@ -28,6 +28,7 @@ class _FoodConfirmationScreenState extends State<FoodConfirmationScreen> {
   final _proteinController = TextEditingController();
   final _carbsController = TextEditingController();
   final _fatController = TextEditingController();
+  final _fiberController = TextEditingController();
 
   final FoodFirestoreService _firestoreService = FoodFirestoreService();
   final MLFoodRecognitionService _mlService = MLFoodRecognitionService();
@@ -41,6 +42,7 @@ class _FoodConfirmationScreenState extends State<FoodConfirmationScreen> {
   double _baseProtein = 0;
   double _baseCarbs = 0;
   double _baseFat = 0;
+  double _baseFiber = 0;
 
   @override
   void initState() {
@@ -58,6 +60,7 @@ class _FoodConfirmationScreenState extends State<FoodConfirmationScreen> {
       _proteinController.text = food.protein.toString();
       _carbsController.text = food.carbs.toString();
       _fatController.text = food.fat.toString();
+      _fiberController.text = '0';
     }
     // If we have ML predictions
     else if (widget.mlResponse != null &&
@@ -73,6 +76,7 @@ class _FoodConfirmationScreenState extends State<FoodConfirmationScreen> {
         _proteinController.text = nutrition.protein.toString();
         _carbsController.text = nutrition.carbohydrates.toString();
         _fatController.text = nutrition.fat.toString();
+        _fiberController.text = '0';
       } else {
         // Default values or fetch from API
         _fetchNutritionData(topPrediction.name);
@@ -85,6 +89,7 @@ class _FoodConfirmationScreenState extends State<FoodConfirmationScreen> {
       _proteinController.text = '0';
       _carbsController.text = '0';
       _fatController.text = '0';
+      _fiberController.text = '0';
     }
   }
 
@@ -99,12 +104,14 @@ class _FoodConfirmationScreenState extends State<FoodConfirmationScreen> {
         _baseProtein = nutrition.protein;
         _baseCarbs = nutrition.carbohydrates;
         _baseFat = nutrition.fat;
+        _baseFiber = 0; // Nutritionix API doesn't provide fiber
 
         // Set initial values
         _caloriesController.text = nutrition.calories.toString();
         _proteinController.text = nutrition.protein.toString();
         _carbsController.text = nutrition.carbohydrates.toString();
         _fatController.text = nutrition.fat.toString();
+        _fiberController.text = '0';
       }
     } catch (e) {
       print('Error fetching nutrition: $e');
@@ -127,6 +134,7 @@ class _FoodConfirmationScreenState extends State<FoodConfirmationScreen> {
     _proteinController.text = (_baseProtein * scaleFactor).toStringAsFixed(1);
     _carbsController.text = (_baseCarbs * scaleFactor).toStringAsFixed(1);
     _fatController.text = (_baseFat * scaleFactor).toStringAsFixed(1);
+    _fiberController.text = (_baseFiber * scaleFactor).toStringAsFixed(1);
 
     setState(() {});
   }
@@ -153,6 +161,10 @@ class _FoodConfirmationScreenState extends State<FoodConfirmationScreen> {
         date: DateTime.now().toIso8601String().split('T').first,
         quantity: double.tryParse(_quantityController.text) ?? 100.0,
         userId: '', // Will be set by Firestore service
+        protein: double.tryParse(_proteinController.text) ?? 0.0,
+        carbs: double.tryParse(_carbsController.text) ?? 0.0,
+        fat: double.tryParse(_fatController.text) ?? 0.0,
+        fiber: double.tryParse(_fiberController.text) ?? 0.0,
       );
 
       await _firestoreService.insertLog(foodLog);
@@ -416,12 +428,29 @@ class _FoodConfirmationScreenState extends State<FoodConfirmationScreen> {
               ),
               const SizedBox(height: 16),
 
-              TextFormField(
-                controller: _fatController,
-                decoration: const InputDecoration(
-                  labelText: 'Fat (g)',
-                ),
-                keyboardType: TextInputType.number,
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _fatController,
+                      decoration: const InputDecoration(
+                        labelText: 'Fat (g)',
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _fiberController,
+                      decoration: const InputDecoration(
+                        labelText: 'Fiber (g)',
+                        hintText: 'Optional',
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 32),
 
@@ -456,6 +485,7 @@ class _FoodConfirmationScreenState extends State<FoodConfirmationScreen> {
     _proteinController.dispose();
     _carbsController.dispose();
     _fatController.dispose();
+    _fiberController.dispose();
     super.dispose();
   }
 }

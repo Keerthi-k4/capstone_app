@@ -1,8 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import '../config.dart';
+import 'direct_diet_service.dart';
 
 class FoodLog {
   final String? id;
@@ -12,6 +10,11 @@ class FoodLog {
   final String date;
   final double quantity;
   final String userId;
+  // Macro fields
+  final double protein;
+  final double carbs;
+  final double fat;
+  final double fiber;
 
   FoodLog({
     this.id,
@@ -21,6 +24,10 @@ class FoodLog {
     required this.date,
     this.quantity = 1.0,
     required this.userId,
+    this.protein = 0.0,
+    this.carbs = 0.0,
+    this.fat = 0.0,
+    this.fiber = 0.0,
   });
 
   Map<String, dynamic> toMap() {
@@ -31,6 +38,10 @@ class FoodLog {
       'date': date,
       'quantity': quantity,
       'userId': userId,
+      'protein': protein,
+      'carbs': carbs,
+      'fat': fat,
+      'fiber': fiber,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
@@ -43,6 +54,10 @@ class FoodLog {
       'mealType': mealType,
       'date': date,
       'quantity': quantity,
+      'protein': protein,
+      'carbs': carbs,
+      'fat': fat,
+      'fiber': fiber,
     };
   }
 
@@ -56,6 +71,10 @@ class FoodLog {
       date: data['date'] ?? '',
       quantity: (data['quantity'] ?? 1.0).toDouble(),
       userId: data['userId'] ?? '',
+      protein: (data['protein'] ?? 0.0).toDouble(),
+      carbs: (data['carbs'] ?? 0.0).toDouble(),
+      fat: (data['fat'] ?? 0.0).toDouble(),
+      fiber: (data['fiber'] ?? 0.0).toDouble(),
     );
   }
 }
@@ -310,14 +329,15 @@ class FoodFirestoreService {
     await docRef.delete();
   }
 
-  // FIXED: generateRecommendations method with proper query
+  /// Generate recommendations using direct Groq API (no FastAPI server needed)
+  /// This works on mobile just like exercise planning does
   Future<void> generateRecommendations(String date) async {
     try {
-      print('Starting recommendation generation for date: $date');
+      print('🚀 Starting direct recommendation generation for date: $date');
 
       final userId = _requireUserId;
 
-      // Get recent logs (last 7 days) - FIXED QUERY
+      // Get recent logs (last 7 days) for context
       final DateTime targetDate = DateTime.parse(date);
       final DateTime weekAgo = targetDate.subtract(Duration(days: 7));
       final String weekAgoStr = weekAgo.toIso8601String().split('T')[0];
@@ -329,7 +349,7 @@ class FoodFirestoreService {
           .limit(100) // Limit to last 100 logs for performance
           .get();
 
-      print('Fetched ${querySnapshot.docs.length} total logs');
+      print('📦 Fetched ${querySnapshot.docs.length} total logs');
 
       // Filter in code for last 7 days
       final recentDocs = querySnapshot.docs.where((doc) {
@@ -339,15 +359,14 @@ class FoodFirestoreService {
             logDate.compareTo(date) <= 0;
       }).toList();
 
-      print(
-          'Found ${recentDocs.length} logs for recommendation context (last 7 days)');
+      print('✅ Found ${recentDocs.length} logs for recommendation context (last 7 days)');
 
       if (recentDocs.isEmpty) {
-        print('No food logs found for recommendation generation');
-        return;
+        print('⚠️ No food logs found for recommendation generation');
+        throw Exception('Please log some food first to get recommendations');
       }
 
-      // Convert logs to API format
+      // Convert logs to format expected by DirectDietService
       final logsForApi = recentDocs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
         return {
@@ -356,126 +375,108 @@ class FoodFirestoreService {
           'mealType': data['mealType'],
           'date': data['date'],
           'quantity': data['quantity'] ?? 1.0,
+          'protein': data['protein'] ?? 0,
+          'carbs': data['carbs'] ?? 0,
+          'fat': data['fat'] ?? 0,
         };
       }).toList();
 
-      // Prepare request body matching FastAPI structure
-      final requestBody = {
-        'date': date,
-        'logs': logsForApi,
-        'preferences': [],
-      };
-
-      print(
-          'Sending recommendation request to: ${ApiConfig.baseUrl}/recommendations/generate');
-      print(
-          'Request body preview: date=$date, logs count=${logsForApi.length}');
-
-      // Send to FastAPI endpoint
-      final response = await http
-          .post(
-            Uri.parse('${ApiConfig.baseUrl}/recommendations/generate'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode(requestBody),
-          )
-          .timeout(Duration(seconds: 30));
-
-      print('API Response status: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
-        print('Parsed response data: success=${responseData['success']}');
-
-        if (responseData['success'] == true &&
-            responseData['recommendations'] != null) {
-          // Clear existing recommendations for this date
-          final existingRecsQuery = await _foodRecommendationsCollection
-              .where('userId', isEqualTo: userId)
-              .where('date', isEqualTo: date)
+      // Get user profile for better recommendations
+      Map<String, dynamic>? userProfile;
+      try {
+        final currentUser = FirebaseAuth.instance.currentUser;
+        if (currentUser != null) {
+          final userDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(currentUser.uid)
               .get();
-
-          final batch = _firestore.batch();
-          for (final doc in existingRecsQuery.docs) {
-            batch.delete(doc.reference);
+          if (userDoc.exists) {
+            userProfile = userDoc.data();
+            print('👤 User profile loaded: age=${userProfile?['age']}, weight=${userProfile?['weight']}');
           }
-          await batch.commit();
-
-          print(
-              'Deleted ${existingRecsQuery.docs.length} existing recommendations for $date');
-
-          // Save new recommendations to Firestore
-          final recommendations = responseData['recommendations'] as List;
-          print('Processing ${recommendations.length} recommendations');
-
-          final recommendationsBatch = _firestore.batch();
-          int insertedCount = 0;
-
-          for (var recJson in recommendations) {
-            try {
-              final recommendation =
-                  FoodRecommendation.fromJson(recJson, userId);
-              final dataToSave = recommendation.toFirestoreMap();
-              // Force the stored date to the requested date to match UI queries
-              dataToSave['date'] = date;
-              final docRef = _foodRecommendationsCollection.doc();
-              recommendationsBatch.set(docRef, dataToSave);
-              insertedCount++;
-            } catch (e) {
-              print('Error preparing recommendation: $e');
-              print('Problematic data: $recJson');
-            }
-          }
-
-          await recommendationsBatch.commit();
-          print('Successfully saved $insertedCount recommendations');
-
-          // Verify insertion (without orderBy since timestamps aren't populated yet)
-          final verifyQuery = await _foodRecommendationsCollection
-              .where('userId', isEqualTo: userId)
-              .where('date', isEqualTo: date)
-              .get();
-          print(
-              'Verification: Found ${verifyQuery.docs.length} recommendations in Firestore');
-
-          if (verifyQuery.docs.isEmpty) {
-            print(
-                'WARNING: Recommendations were saved but verification query returned 0 results');
-            print('This might be a timing issue. Checking again...');
-
-            // Wait a moment and try again
-            await Future.delayed(Duration(milliseconds: 500));
-            final retryQuery = await _foodRecommendationsCollection
-                .where('userId', isEqualTo: userId)
-                .where('date', isEqualTo: date)
-                .get();
-            print(
-                'Retry verification: Found ${retryQuery.docs.length} recommendations');
-          }
-        } else {
-          print('API returned success=false or no recommendations');
-          print('Response message: ${responseData['message'] ?? "No message"}');
         }
-      } else {
-        print('Failed to get recommendations. Status: ${response.statusCode}');
-        print('Response body: ${response.body}');
+      } catch (e) {
+        print('⚠️ Could not fetch user profile: $e');
+      }
 
+      // Call direct diet service (similar to exercise planning)
+      print('🤖 Calling DirectDietService...');
+      final recommendations = await DirectDietService.generateRecommendations(
+        date: date,
+        recentLogs: logsForApi,
+        userProfile: userProfile,
+      );
+
+      print('✨ Generated ${recommendations.length} recommendations');
+
+      // Clear existing recommendations for this date
+      final existingRecsQuery = await _foodRecommendationsCollection
+          .where('userId', isEqualTo: userId)
+          .where('date', isEqualTo: date)
+          .get();
+
+      final batch = _firestore.batch();
+      for (final doc in existingRecsQuery.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+
+      print('🗑️ Deleted ${existingRecsQuery.docs.length} existing recommendations for $date');
+
+      // Save new recommendations to Firestore
+      final recommendationsBatch = _firestore.batch();
+      int insertedCount = 0;
+
+      for (final rec in recommendations) {
         try {
-          final errorData = jsonDecode(response.body);
-          print(
-              'Error details: ${errorData['detail'] ?? errorData['message'] ?? "No details"}');
+          final docRef = _foodRecommendationsCollection.doc();
+          recommendationsBatch.set(docRef, {
+            'userId': userId,
+            'name': rec['item'],
+            'calories': rec['calories'],
+            'mealType': rec['mealType'],
+            'date': date, // Force date to match requested date
+            'reason': rec['reasoning'] ?? 'AI recommendation',
+            'accepted': false,
+            'quantity': rec['quantity'] ?? 1.0,
+            'protein': rec['protein'] ?? 0,
+            'carbs': rec['carbs'] ?? 0,
+            'fat': rec['fat'] ?? 0,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+          insertedCount++;
         } catch (e) {
-          print('Could not parse error response as JSON');
+          print('❌ Error preparing recommendation: $e');
+          print('Problematic data: $rec');
         }
+      }
+
+      await recommendationsBatch.commit();
+      print('💾 Successfully saved $insertedCount recommendations to Firestore');
+
+      // Verify insertion
+      final verifyQuery = await _foodRecommendationsCollection
+          .where('userId', isEqualTo: userId)
+          .where('date', isEqualTo: date)
+          .get();
+      print('✅ Verification: Found ${verifyQuery.docs.length} recommendations in Firestore');
+
+      if (verifyQuery.docs.isEmpty) {
+        print('⚠️ WARNING: Recommendations were saved but verification query returned 0 results');
+        print('This might be a timing issue. Checking again...');
+
+        // Wait a moment and try again
+        await Future.delayed(Duration(milliseconds: 500));
+        final retryQuery = await _foodRecommendationsCollection
+            .where('userId', isEqualTo: userId)
+            .where('date', isEqualTo: date)
+            .get();
+        print('🔄 Retry verification: Found ${retryQuery.docs.length} recommendations');
       }
     } catch (e, stackTrace) {
-      print('Error calling recommendation API: $e');
+      print('❌ Error generating recommendations: $e');
       print('Stack trace: $stackTrace');
-
-      if (e is http.ClientException) {
-        print('Network error: Check if API server is running');
-      } else if (e is FormatException) {
-        print('JSON parsing error: API response might not be valid JSON');
-      }
+      rethrow;
     }
   }
 
