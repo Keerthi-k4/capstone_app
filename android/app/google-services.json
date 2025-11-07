@@ -22,6 +22,22 @@
           }
         },
         {
+          "client_id": "551251134392-knc8pqjf23othi41dtiv80ncpnfi2gdi.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.capstone.fitnessdiet",
+            "certificate_hash": "f4458dd2a9a88f824a02d5a2e3c354997f0f51a4"
+          }
+        },
+        {
+          "client_id": "551251134392-pmnt4t68b63pr8n9spvj2655dlivrg10.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.capstone.fitnessdiet",
+            "certificate_hash": "2c033904e7e20a29760b1c67528fe86f3586d700"
+          }
+        },
+        {
           "client_id": "551251134392-6as5sa6upekf2f8llv5squgp7uuf1t2k.apps.googleusercontent.com",
           "client_type": 3
         }
@@ -37,6 +53,13 @@
             {
               "client_id": "551251134392-6as5sa6upekf2f8llv5squgp7uuf1t2k.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "551251134392-fak5k6tkjvvjlk91nr96k5j0lhv39b1l.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.attempt2"
+              }
             }
           ]
         }

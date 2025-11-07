@@ -11,9 +11,9 @@ import 'manual_food_search_screen.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import 'package:dio/dio.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../services/calendar_service.dart';
 
 class FoodTrackingScreen extends StatefulWidget {
   const FoodTrackingScreen({super.key});
@@ -399,12 +399,21 @@ class ExerciseTrackingScreen extends StatefulWidget {
 class _ExerciseTrackingScreenState extends State<ExerciseTrackingScreen> {
   final _formKey = GlobalKey<FormState>();
   final List<String> _muscleGroups = [
-    'Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Legs', 'Abs', 'Glutes', 'Other'
+    'Chest',
+    'Back',
+    'Shoulders',
+    'Biceps',
+    'Triceps',
+    'Legs',
+    'Abs',
+    'Glutes',
+    'Other'
   ];
   List<String> _selectedMuscleGroups = [];
   String? _workoutType; // 'Weights' or 'Bodyweight'
   final _durationController = TextEditingController();
   String? _workoutPlanResult;
+  bool _isAddingToCalendar = false;
 
   @override
   void dispose() {
@@ -433,7 +442,8 @@ class _ExerciseTrackingScreenState extends State<ExerciseTrackingScreen> {
                 child: ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: 600),
                   child: Card(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
                     elevation: 4,
                     child: Padding(
                       padding: const EdgeInsets.all(24),
@@ -452,15 +462,18 @@ class _ExerciseTrackingScreenState extends State<ExerciseTrackingScreen> {
                                   hint: const Text('Select muscle group'),
                                   value: null,
                                   items: _muscleGroups
-                                      .where((mg) => !_selectedMuscleGroups.contains(mg))
+                                      .where((mg) =>
+                                          !_selectedMuscleGroups.contains(mg))
                                       .map((group) => DropdownMenuItem(
                                             value: group,
                                             child: Text(group),
                                           ))
                                       .toList(),
                                   onChanged: (val) {
-                                    if (val != null && !_selectedMuscleGroups.contains(val)) {
-                                      setState(() => _selectedMuscleGroups.add(val));
+                                    if (val != null &&
+                                        !_selectedMuscleGroups.contains(val)) {
+                                      setState(
+                                          () => _selectedMuscleGroups.add(val));
                                     }
                                   },
                                 ),
@@ -475,7 +488,9 @@ class _ExerciseTrackingScreenState extends State<ExerciseTrackingScreen> {
                                       .map((mg) => Chip(
                                             label: Text(mg),
                                             onDeleted: () {
-                                              setState(() => _selectedMuscleGroups.remove(mg));
+                                              setState(() =>
+                                                  _selectedMuscleGroups
+                                                      .remove(mg));
                                             },
                                           ))
                                       .toList(),
@@ -486,15 +501,20 @@ class _ExerciseTrackingScreenState extends State<ExerciseTrackingScreen> {
                               value: _workoutType,
                               isExpanded: true,
                               items: const [
-                                DropdownMenuItem(value: 'Weights', child: Text('Weights')),
-                                DropdownMenuItem(value: 'Bodyweight', child: Text('Bodyweight')),
+                                DropdownMenuItem(
+                                    value: 'Weights', child: Text('Weights')),
+                                DropdownMenuItem(
+                                    value: 'Bodyweight',
+                                    child: Text('Bodyweight')),
                               ],
-                              onChanged: (val) => setState(() => _workoutType = val),
+                              onChanged: (val) =>
+                                  setState(() => _workoutType = val),
                               decoration: const InputDecoration(
                                 labelText: 'Workout Type',
                                 border: OutlineInputBorder(),
                               ),
-                              validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                              validator: (v) =>
+                                  v == null || v.isEmpty ? 'Required' : null,
                             ),
                             const SizedBox(height: 20),
                             TextFormField(
@@ -504,32 +524,45 @@ class _ExerciseTrackingScreenState extends State<ExerciseTrackingScreen> {
                                 labelText: 'Duration (minutes)',
                                 border: OutlineInputBorder(),
                               ),
-                              validator: (v) => (v == null || v.isEmpty || int.tryParse(v) == null || int.parse(v) <= 0)
-                                  ? 'Enter valid duration' : null,
+                              validator: (v) => (v == null ||
+                                      v.isEmpty ||
+                                      int.tryParse(v) == null ||
+                                      int.parse(v) <= 0)
+                                  ? 'Enter valid duration'
+                                  : null,
                             ),
                             const SizedBox(height: 30),
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Theme.of(context).primaryColor,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  backgroundColor:
+                                      Theme.of(context).primaryColor,
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8)),
                                 ),
                                 onPressed: () async {
                                   if (_formKey.currentState!.validate()) {
                                     if (_selectedMuscleGroups.isEmpty) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Please select at least one muscle group')));
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(const SnackBar(
+                                              content: Text(
+                                                  'Please select at least one muscle group')));
                                       return;
                                     }
                                     showDialog(
                                       context: context,
                                       barrierDismissible: false,
-                                      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+                                      builder: (ctx) => const Center(
+                                          child: CircularProgressIndicator()),
                                     );
 
-                                    final profile = Provider.of<AuthProvider>(context, listen: false).currentUser;
-                                    final groqApiKey = dotenv.env['WORKOUT_API_KEY'];
+                                    final profile = Provider.of<AuthProvider>(
+                                            context,
+                                            listen: false)
+                                        .currentUser;
+                                    final groqApiKey =
+                                        dotenv.env['WORKOUT_API_KEY'];
 
                                     final prompt = """
 You are a certified fitness trainer. Create a safe, personalized workout plan ONLY as a numbered list based on:
@@ -547,16 +580,19 @@ The plan should be suitable for a beginner unless otherwise suggested by profile
 Return ONLY the plan as numbered steps.
 """;
 
-                                    String result = 'Failed to connect to Groq API.';
+                                    String result =
+                                        'Failed to connect to Groq API.';
                                     try {
                                       final response = await http.post(
-                                        Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
+                                        Uri.parse(
+                                            'https://api.groq.com/openai/v1/chat/completions'),
                                         headers: {
                                           'Authorization': 'Bearer $groqApiKey',
                                           'Content-Type': 'application/json',
                                         },
                                         body: json.encode({
-                                          "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+                                          "model":
+                                              "meta-llama/llama-4-scout-17b-16e-instruct",
                                           "messages": [
                                             {"role": "user", "content": prompt}
                                           ],
@@ -567,9 +603,12 @@ Return ONLY the plan as numbered steps.
 
                                       if (response.statusCode == 200) {
                                         final data = json.decode(response.body);
-                                        result = data['choices'][0]['message']['content'].toString();
+                                        result = data['choices'][0]['message']
+                                                ['content']
+                                            .toString();
                                       } else {
-                                        result = "Groq API error: ${response.body}";
+                                        result =
+                                            "Groq API error: ${response.body}";
                                       }
                                     } catch (e) {
                                       result = "Failed to contact Groq API: $e";
@@ -583,7 +622,10 @@ Return ONLY the plan as numbered steps.
                                     }
                                   }
                                 },
-                                child: const Text('Create Workout', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                child: const Text('Create Workout',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold)),
                               ),
                             ),
                             if (_workoutPlanResult != null)
@@ -591,12 +633,192 @@ Return ONLY the plan as numbered steps.
                                 padding: const EdgeInsets.only(top: 24.0),
                                 child: Card(
                                   elevation: 4,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16)),
                                   child: Padding(
                                     padding: const EdgeInsets.all(20),
-                                    child: Text(
-                                      _workoutPlanResult!,
-                                      style: const TextStyle(fontSize: 16),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        Text(
+                                          _workoutPlanResult!,
+                                          style: const TextStyle(fontSize: 16),
+                                        ),
+                                        const SizedBox(height: 20),
+                                        ElevatedButton.icon(
+                                          onPressed: _isAddingToCalendar
+                                              ? null
+                                              : () async {
+                                                  final durationMinutes =
+                                                      int.tryParse(
+                                                          _durationController
+                                                              .text);
+                                                  if (durationMinutes == null ||
+                                                      durationMinutes <= 0) {
+                                                    ScaffoldMessenger.of(
+                                                            context)
+                                                        .showSnackBar(
+                                                      const SnackBar(
+                                                        content: Text(
+                                                            'Please enter a valid workout duration before adding to calendar.'),
+                                                      ),
+                                                    );
+                                                    return;
+                                                  }
+
+                                                  final selectedDate =
+                                                      await showDatePicker(
+                                                    context: context,
+                                                    initialDate: DateTime.now(),
+                                                    firstDate: DateTime.now(),
+                                                    lastDate: DateTime.now()
+                                                        .add(const Duration(
+                                                            days: 365)),
+                                                  );
+
+                                                  if (selectedDate == null) {
+                                                    return;
+                                                  }
+
+                                                  final now = DateTime.now()
+                                                      .add(const Duration(
+                                                          minutes: 15));
+                                                  final selectedTime =
+                                                      await showTimePicker(
+                                                    context: context,
+                                                    initialTime: TimeOfDay(
+                                                        hour: now.hour,
+                                                        minute: now.minute),
+                                                  );
+
+                                                  if (selectedTime == null) {
+                                                    return;
+                                                  }
+
+                                                  final start = DateTime(
+                                                    selectedDate.year,
+                                                    selectedDate.month,
+                                                    selectedDate.day,
+                                                    selectedTime.hour,
+                                                    selectedTime.minute,
+                                                  );
+                                                  final end = start.add(
+                                                      Duration(
+                                                          minutes:
+                                                              durationMinutes));
+
+                                                  if (!mounted) return;
+                                                  setState(() =>
+                                                      _isAddingToCalendar =
+                                                          true);
+
+                                                  try {
+                                                    final authProvider = context
+                                                        .read<AuthProvider>();
+                                                    final hasPermissions =
+                                                        await authProvider
+                                                            .ensureCalendarPermissions(
+                                                                promptIfNeeded:
+                                                                    true);
+
+                                                    if (!hasPermissions) {
+                                                      if (!mounted) return;
+                                                      ScaffoldMessenger.of(
+                                                              context)
+                                                          .showSnackBar(
+                                                        const SnackBar(
+                                                          content: Text(
+                                                              'Calendar access was not granted. Please enable Google Calendar permissions to continue.'),
+                                                        ),
+                                                      );
+                                                      return;
+                                                    }
+
+                                                    final calendarService =
+                                                        context.read<
+                                                            CalendarService>();
+                                                    final title =
+                                                        _selectedMuscleGroups
+                                                                .isEmpty
+                                                            ? 'Generated Workout'
+                                                            : 'Workout: ${_selectedMuscleGroups.join(', ')}';
+                                                    final description = [
+                                                      if (_workoutType != null)
+                                                        'Type: $_workoutType',
+                                                      'Duration: $durationMinutes minutes',
+                                                      '',
+                                                      _workoutPlanResult!,
+                                                    ].join('\n');
+
+                                                    await calendarService
+                                                        .addWorkoutToCalendar(
+                                                      title: title,
+                                                      description: description,
+                                                      start: start,
+                                                      end: end,
+                                                    );
+
+                                                    if (!mounted) return;
+                                                    ScaffoldMessenger.of(
+                                                            context)
+                                                        .showSnackBar(
+                                                      const SnackBar(
+                                                        content: Text(
+                                                            'Workout added to Google Calendar'),
+                                                      ),
+                                                    );
+                                                  } on CalendarException catch (e) {
+                                                    if (!mounted) return;
+                                                    ScaffoldMessenger.of(
+                                                            context)
+                                                        .showSnackBar(
+                                                      SnackBar(
+                                                        content:
+                                                            Text(e.message),
+                                                      ),
+                                                    );
+                                                  } catch (e) {
+                                                    if (!mounted) return;
+                                                    ScaffoldMessenger.of(
+                                                            context)
+                                                        .showSnackBar(
+                                                      SnackBar(
+                                                        content: Text(
+                                                            'Failed to add workout to calendar: $e'),
+                                                      ),
+                                                    );
+                                                  } finally {
+                                                    if (mounted) {
+                                                      setState(() =>
+                                                          _isAddingToCalendar =
+                                                              false);
+                                                    }
+                                                  }
+                                                },
+                                          icon: _isAddingToCalendar
+                                              ? const SizedBox(
+                                                  width: 18,
+                                                  height: 18,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                          strokeWidth: 2),
+                                                )
+                                              : const Icon(
+                                                  Icons.calendar_today),
+                                          label: Text(
+                                            _isAddingToCalendar
+                                                ? 'Adding to calendar...'
+                                                : 'Add to calendar',
+                                          ),
+                                          style: ElevatedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                                vertical: 14),
+                                            backgroundColor:
+                                                Theme.of(context).primaryColor,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),

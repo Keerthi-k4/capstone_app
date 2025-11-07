@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:attempt2/models/user_model.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:attempt2/core/services/dummy_auth_service.dart';
@@ -14,9 +16,20 @@ class AuthProvider with ChangeNotifier {
   String? _error;
   bool _useFirebase = true;
 
+  static const String _calendarScope =
+      'https://www.googleapis.com/auth/calendar.events';
+  static const List<String> _googleScopes = <String>[
+    'email',
+    _calendarScope,
+  ];
+
   // Firebase instances
   final firebase_auth.FirebaseAuth _auth = firebase_auth.FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: _googleScopes,
+    clientId: kIsWeb ? dotenv.env['GOOGLE_WEB_CLIENT_ID'] : null,
+  );
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // Dummy auth service for development
   final DummyAuthService _dummyAuth = DummyAuthService();
@@ -24,9 +37,65 @@ class AuthProvider with ChangeNotifier {
   // Add debug flag
   final bool _isDebugging = true;
 
+  bool _calendarScopeGranted = false;
+  String? _calendarScopeGrantedAccountId;
+  bool _calendarPromptRequestedThisSession = false;
+
   void _debugPrint(String message) {
     if (_isDebugging) {
       print('AUTH DEBUG: $message');
+    }
+  }
+
+  void _markCalendarScopeGranted(GoogleSignInAccount account) {
+    _calendarScopeGranted = true;
+    _calendarScopeGrantedAccountId = account.id;
+  }
+
+  void _clearCalendarScopeState() {
+    _calendarScopeGranted = false;
+    _calendarScopeGrantedAccountId = null;
+  }
+
+  void _syncCalendarScopeForAccount(GoogleSignInAccount account) {
+    if (_calendarScopeGrantedAccountId != null &&
+        _calendarScopeGrantedAccountId != account.id) {
+      _clearCalendarScopeState();
+    }
+  }
+
+  Future<void> _restoreGoogleAccountIfAvailable() async {
+    try {
+      if (await _googleSignIn.isSignedIn()) {
+        final account = await _googleSignIn.signInSilently();
+        if (account != null) {
+          _debugPrint('Restored Google account ${account.email} at startup');
+          _syncCalendarScopeForAccount(account);
+        }
+      }
+    } catch (e) {
+      _debugPrint('Failed to restore Google account silently: $e');
+    }
+  }
+
+  Future<void> _promptCalendarPermissionsAfterLogin() async {
+    if (_calendarScopeGranted && _calendarScopeGrantedAccountId != null) {
+      return;
+    }
+    if (_calendarPromptRequestedThisSession) {
+      return;
+    }
+    _calendarPromptRequestedThisSession = true;
+    _debugPrint('Prompting for calendar permissions right after login');
+    try {
+      final account = await _ensureCalendarAccount(promptIfNeeded: true);
+      if (account != null) {
+        _debugPrint('Calendar permissions ensured immediately after login');
+      } else {
+        _debugPrint('User skipped calendar permission prompt after login');
+      }
+    } catch (e) {
+      _debugPrint('Error while prompting for calendar permissions: $e');
     }
   }
 
@@ -47,8 +116,20 @@ class AuthProvider with ChangeNotifier {
       firebase_auth.FirebaseAuth.instance.app;
       _useFirebase = true;
 
+      if (kIsWeb) {
+        final webClientId = dotenv.env['GOOGLE_WEB_CLIENT_ID'];
+        if (webClientId == null || webClientId.isEmpty) {
+          _debugPrint(
+            'GOOGLE_WEB_CLIENT_ID is not set. Google sign-in on web will fail.',
+          );
+        }
+      }
+
       // Load user data
-      _loadUserFromPrefs();
+      await _loadUserFromPrefs();
+
+      // Attempt to restore any cached Google sign-in so calendar scopes persist
+      await _restoreGoogleAccountIfAvailable();
 
       // Listen to Firebase auth state changes
       _auth.authStateChanges().listen((firebase_auth.User? user) {
@@ -69,7 +150,7 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  /// Load user data from shared preferences
+  /// Load user data from shared preferences and Firestore
   Future<void> _loadUserFromPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -78,6 +159,24 @@ class AuthProvider with ChangeNotifier {
       if (userData != null) {
         _currentUser = UserModel.fromJsonString(userData);
         notifyListeners();
+        
+        // If using Firebase, also try to load from Firestore for latest data
+        if (_useFirebase && _auth.currentUser != null) {
+          final doc = await _firestore
+              .collection('users')
+              .doc(_auth.currentUser!.uid)
+              .get();
+          
+          if (doc.exists) {
+            final firestoreUser = UserModel.fromJson({
+              'id': doc.id,
+              ...doc.data()!,
+            });
+            _currentUser = firestoreUser;
+            await _saveUserToPrefs(firestoreUser);
+            notifyListeners();
+          }
+        }
       }
     } catch (e) {
       _error = "Failed to load user data: $e";
@@ -173,6 +272,8 @@ class AuthProvider with ChangeNotifier {
 
         // Save user to shared preferences
         await _saveUserToPrefs(_currentUser!);
+
+        await _promptCalendarPermissionsAfterLogin();
 
         _isLoading = false;
         notifyListeners();
@@ -270,6 +371,8 @@ class AuthProvider with ChangeNotifier {
         // Save user to shared preferences
         await _saveUserToPrefs(_currentUser!);
 
+        await _promptCalendarPermissionsAfterLogin();
+
         _isLoading = false;
         notifyListeners();
         return true;
@@ -347,10 +450,20 @@ class AuthProvider with ChangeNotifier {
         return false;
       }
 
+      final scopedAccount = await _ensureCalendarAccount(
+          account: googleUser, promptIfNeeded: true);
+      if (scopedAccount == null) {
+        _debugPrint('User declined calendar permissions during Google sign-in');
+        _error = 'Calendar access is required to continue with Google sign-in';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+
       _debugPrint('Getting Google auth credentials');
       // Obtain the auth details from the request
       final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
+          await scopedAccount.authentication;
 
       // Create a new credential
       final credential = firebase_auth.GoogleAuthProvider.credential(
@@ -410,6 +523,143 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  Future<GoogleSignInAccount?> _ensureGoogleAccount({
+    bool promptIfNeeded = true,
+  }) async {
+    try {
+      GoogleSignInAccount? account = await _googleSignIn.signInSilently();
+      if (account == null && promptIfNeeded) {
+        account = await _googleSignIn.signIn();
+      }
+      if (account != null) {
+        _syncCalendarScopeForAccount(account);
+      }
+      return account;
+    } catch (e) {
+      _debugPrint('Error ensuring Google account: $e');
+      return null;
+    }
+  }
+
+  Future<GoogleSignInAccount?> _ensureCalendarAccount({
+    bool promptIfNeeded = true,
+    GoogleSignInAccount? account,
+  }) async {
+    try {
+      GoogleSignInAccount? resolvedAccount =
+          account ?? await _ensureGoogleAccount(promptIfNeeded: promptIfNeeded);
+      if (resolvedAccount == null) {
+        _debugPrint(
+            'No Google account available when requesting calendar permissions.');
+        return null;
+      }
+
+      _syncCalendarScopeForAccount(resolvedAccount);
+
+      if (_calendarScopeGranted &&
+          _calendarScopeGrantedAccountId == resolvedAccount.id) {
+        return resolvedAccount;
+      }
+
+      final bool hasScope = await _hasCalendarScope(resolvedAccount);
+      _debugPrint('Calendar scope check before prompt: $hasScope');
+      if (hasScope) {
+        _markCalendarScopeGranted(resolvedAccount);
+        return resolvedAccount;
+      }
+
+      if (!promptIfNeeded) {
+        return null;
+      }
+
+      try {
+        final bool granted =
+            await _googleSignIn.requestScopes(<String>[_calendarScope]);
+        _debugPrint('requestScopes result: $granted');
+        if (!granted) {
+          _debugPrint('User declined calendar scope request.');
+          return null;
+        }
+      } on PlatformException catch (e) {
+        if (e.code == 'popup_closed' || e.code == 'network_error') {
+          _debugPrint('Calendar scope dialog dismissed with code: ${e.code}');
+          return null;
+        }
+        rethrow;
+      }
+
+      // Refresh the account to obtain updated auth tokens/scopes.
+      resolvedAccount = await _googleSignIn.signInSilently() ??
+          await _googleSignIn.signIn() ??
+          resolvedAccount;
+
+      // Attempt to refresh the account so that new tokens/scopes are available.
+      final refreshedAccount = await _googleSignIn.signInSilently();
+      if (refreshedAccount != null) {
+        _debugPrint('Calendar scope granted after prompt');
+        _markCalendarScopeGranted(refreshedAccount);
+        return refreshedAccount;
+      }
+
+      _debugPrint(
+          'Calendar scope granted after prompt (using original account)');
+      _markCalendarScopeGranted(resolvedAccount);
+      return resolvedAccount;
+    } catch (e) {
+      _debugPrint('Error ensuring calendar permissions: $e');
+      return null;
+    }
+  }
+
+  Future<bool> _hasCalendarScope(GoogleSignInAccount account) async {
+    try {
+      _debugPrint('Checking calendar scope via canAccessScopes');
+      await account.clearAuthCache();
+      final googleAuth = await account.authentication;
+      final result = await _googleSignIn.canAccessScopes(
+        <String>[_calendarScope],
+        accessToken: googleAuth.accessToken,
+      );
+      _debugPrint('canAccessScopes returned: $result');
+      if (result) {
+        _markCalendarScopeGranted(account);
+      }
+      return result;
+    } on UnimplementedError catch (e) {
+      _debugPrint(
+        'canAccessScopes not available on this platform: $e. Falling back to cached state.',
+      );
+      return _calendarScopeGranted &&
+          _calendarScopeGrantedAccountId == account.id;
+    } catch (e) {
+      _debugPrint('Error checking calendar scope: $e');
+      return false;
+    }
+  }
+
+  Future<bool> ensureCalendarPermissions({bool promptIfNeeded = true}) async {
+    final account =
+        await _ensureCalendarAccount(promptIfNeeded: promptIfNeeded);
+    return account != null;
+  }
+
+  Future<Map<String, String>?> getGoogleAuthHeaders({
+    bool promptIfNeeded = false,
+  }) async {
+    GoogleSignInAccount? account =
+        await _ensureCalendarAccount(promptIfNeeded: false);
+
+    if (account == null && promptIfNeeded) {
+      account = await _ensureCalendarAccount(promptIfNeeded: true);
+    }
+
+    if (account == null) {
+      return null;
+    }
+
+    return account.authHeaders;
+  }
+
   /// Update user profile information
   Future<bool> updateUserProfile({
     String? name,
@@ -418,6 +668,10 @@ class AuthProvider with ChangeNotifier {
     double? height,
     String? gender,
     Map<String, dynamic>? healthMetrics,
+    String? activityLevel,
+    double? targetWeight,
+    String? medicalConcerns,
+    bool? useWatchDataForTDEE,
   }) async {
     if (_currentUser == null) return false;
 
@@ -432,6 +686,10 @@ class AuthProvider with ChangeNotifier {
         height: height,
         gender: gender,
         healthMetrics: healthMetrics ?? _currentUser!.healthMetrics,
+        activityLevel: activityLevel,
+        targetWeight: targetWeight,
+        medicalConcerns: medicalConcerns,
+        useWatchDataForTDEE: useWatchDataForTDEE,
       );
 
       if (_useFirebase) {
@@ -439,6 +697,12 @@ class AuthProvider with ChangeNotifier {
         if (name != null && name != _auth.currentUser?.displayName) {
           await _auth.currentUser?.updateDisplayName(name);
         }
+        
+        // Save to Firestore
+        await _firestore
+            .collection('users')
+            .doc(_currentUser!.id)
+            .set(updatedUser.toJson(), SetOptions(merge: true));
       } else {
         // Use dummy auth for development
         await _dummyAuth.updateUserProfile(updatedUser);
@@ -483,6 +747,7 @@ class AuthProvider with ChangeNotifier {
       // Clear user data
       _currentUser = null;
       await _clearUserFromPrefs();
+      _clearCalendarScopeState();
 
       _isLoading = false;
       notifyListeners();

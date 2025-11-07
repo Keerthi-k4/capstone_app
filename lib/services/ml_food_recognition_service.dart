@@ -25,22 +25,23 @@ class MLFoodRecognitionService {
   Future<bool> isServerHealthy() async {
     for (final url in _serverUrls) {
       try {
-        print('Checking server health at: $url');
+        // Silently check each server
         _dio.options.baseUrl = url;
         final response = await _dio.get('/health');
         
         if (response.data['status'] == 'healthy') {
           _workingUrl = url;
-          print('? Server healthy at: $url');
+          print('✅ ML Server connected at: $url');
           return true;
         }
       } catch (e) {
-        print('? Server check failed at $url: $e');
+        // Silently fail and try next server
         continue;
       }
     }
     
-    print('? No healthy servers found');
+    // Only print if no server is found (this is expected if using mobile without ML server)
+    print('ℹ️ ML image recognition server not available (this is normal on mobile without local server)');
     return false;
   }
 
