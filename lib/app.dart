@@ -6,6 +6,7 @@ import 'package:attempt2/screens/home_screen.dart';
 import 'package:attempt2/core/theme.dart';
 import 'package:attempt2/providers/auth_provider.dart';
 import 'package:attempt2/providers/diet_provider.dart';
+import 'package:attempt2/services/calendar_service.dart';
 import 'screens/goals_screen.dart';
 
 class App extends StatelessWidget {
@@ -17,6 +18,11 @@ class App extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => DietProvider()),
+        ProxyProvider<AuthProvider, CalendarService>(
+          update: (_, authProvider, previous) =>
+              (previous ?? CalendarService(authProvider))
+                ..updateAuthProvider(authProvider),
+        ),
       ],
       child: MaterialApp(
         title: 'Diet & Fitness App',

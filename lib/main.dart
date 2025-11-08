@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:attempt2/app.dart';
@@ -12,9 +13,18 @@ void main() async {
 
   // Initialize Firebase
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    if (kIsWeb) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.web,
+      );
+    } else if (defaultTargetPlatform == TargetPlatform.android) {
+      // Use the configuration from google-services.json on Android.
+      await Firebase.initializeApp();
+    } else {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
     debugPrint('Firebase initialized successfully');
   } catch (e) {
     debugPrint('Failed to initialize Firebase: $e');

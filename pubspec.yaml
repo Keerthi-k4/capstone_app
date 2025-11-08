@@ -51,8 +51,9 @@ dependencies:
   google_fonts: ^6.1.0
   
   # Authentication 
-  google_sign_in: ^5.4.4
+  google_sign_in: ^6.1.5
   flutter_signin_button: ^2.0.0
+  googleapis: ^13.2.0
   
   # Other utilities
   shared_preferences: ^2.2.2
