@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../models/food_model.dart';
 import '../services/ml_food_recognition_service.dart';
+import '../services/nutrition_db_helper.dart';
 import 'food_confirmation_screen.dart';
 
 class ManualFoodSearchScreen extends StatefulWidget {
@@ -13,62 +16,32 @@ class ManualFoodSearchScreen extends StatefulWidget {
 class _ManualFoodSearchScreenState extends State<ManualFoodSearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   final MLFoodRecognitionService _mlService = MLFoodRecognitionService();
-  
+  final NutritionDBHelper _nutritionDb = NutritionDBHelper.instance;
+
   List<FoodItem> _searchResults = [];
   bool _isSearching = false;
   bool _showSuggestions = false;
-
-  // Common food suggestions
-  final List<String> _commonFoods = [
-    'Apple', 'Banana', 'Orange', 'Rice', 'Chicken Breast', 'Salmon',
-    'Broccoli', 'Spinach', 'Eggs', 'Milk', 'Bread', 'Pasta',
-    'Pizza', 'Burger', 'Sandwich', 'Salad', 'Yogurt', 'Cheese',
-    'Almonds', 'Avocado', 'Sweet Potato', 'Quinoa', 'Oatmeal',
-    'Dosa', 'Idli', 'Chapati', 'Dal', 'Samosa', 'Biryani'
-  ];
-
-  // Basic nutrition data for common foods (calories per 100g)
-  final Map<String, Map<String, double>> _basicNutritionData = {
-    'Apple': {'calories': 52, 'protein': 0.3, 'carbs': 14, 'fat': 0.2},
-    'Banana': {'calories': 89, 'protein': 1.1, 'carbs': 23, 'fat': 0.3},
-    'Orange': {'calories': 47, 'protein': 0.9, 'carbs': 12, 'fat': 0.1},
-    'Rice': {'calories': 130, 'protein': 2.7, 'carbs': 28, 'fat': 0.3},
-    'Chicken Breast': {'calories': 165, 'protein': 31, 'carbs': 0, 'fat': 3.6},
-    'Salmon': {'calories': 208, 'protein': 22, 'carbs': 0, 'fat': 13},
-    'Broccoli': {'calories': 34, 'protein': 2.8, 'carbs': 7, 'fat': 0.4},
-    'Spinach': {'calories': 23, 'protein': 2.9, 'carbs': 3.6, 'fat': 0.4},
-    'Eggs': {'calories': 155, 'protein': 13, 'carbs': 1.1, 'fat': 11},
-    'Milk': {'calories': 42, 'protein': 3.4, 'carbs': 5, 'fat': 1},
-    'Bread': {'calories': 265, 'protein': 9, 'carbs': 49, 'fat': 3.2},
-    'Pasta': {'calories': 131, 'protein': 5, 'carbs': 25, 'fat': 1.1},
-    'Pizza': {'calories': 285, 'protein': 12, 'carbs': 36, 'fat': 10},
-    'Burger': {'calories': 295, 'protein': 15, 'carbs': 30, 'fat': 14},
-    'Sandwich': {'calories': 250, 'protein': 12, 'carbs': 30, 'fat': 9},
-    'Salad': {'calories': 20, 'protein': 1.5, 'carbs': 4, 'fat': 0.2},
-    'Yogurt': {'calories': 59, 'protein': 10, 'carbs': 3.6, 'fat': 0.4},
-    'Cheese': {'calories': 113, 'protein': 7, 'carbs': 1, 'fat': 9},
-    'Almonds': {'calories': 579, 'protein': 21, 'carbs': 22, 'fat': 50},
-    'Avocado': {'calories': 160, 'protein': 2, 'carbs': 9, 'fat': 15},
-    'Dosa': {'calories': 168, 'protein': 4, 'carbs': 25, 'fat': 6},
-    'Idli': {'calories': 58, 'protein': 2, 'carbs': 8, 'fat': 2},
-    'Chapati': {'calories': 297, 'protein': 11, 'carbs': 51, 'fat': 7},
-    'Dal': {'calories': 116, 'protein': 9, 'carbs': 20, 'fat': 0.4},
-    'Samosa': {'calories': 262, 'protein': 6, 'carbs': 24, 'fat': 16},
-    'Biryani': {'calories': 200, 'protein': 8, 'carbs': 35, 'fat': 4},
-  };
+  List<String> _suggestions = [];
+  final Map<String, Map<String, double>> _suggestionNutrition = {};
+  int _suggestionRequestId = 0;
+  Timer? _searchDebounce;
+  bool _skipNextTextChange = false;
 
   @override
   void initState() {
     super.initState();
     _showSuggestions = true;
+    _loadInitialSuggestions();
   }
 
   void _performSearch(String query) async {
-    if (query.trim().isEmpty) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
       setState(() {
         _searchResults = [];
         _showSuggestions = true;
       });
+      _updateSuggestions('');
       return;
     }
 
@@ -77,66 +50,143 @@ class _ManualFoodSearchScreenState extends State<ManualFoodSearchScreen> {
       _showSuggestions = false;
     });
 
-    // First, search locally
-    final localResults = _searchLocally(query);
-    
-    // Try to get nutrition data from ML service
-    final enhancedResults = <FoodItem>[];
-    
-    for (final result in localResults) {
-      try {
-        final nutrition = await _mlService.getNutrition(result.name);
-        if (nutrition != null) {
-          enhancedResults.add(FoodItem(
-            id: result.id,
-            name: nutrition.foodName,
-            calories: nutrition.calories,
-            protein: nutrition.protein,
-            carbs: nutrition.carbohydrates,
-            fat: nutrition.fat,
-            category: 'Nutritionix API',
-          ));
-        } else {
+    try {
+      final localResults = await _searchDatabase(trimmed);
+      final enhancedResults = <FoodItem>[];
+
+      for (final result in localResults) {
+        if (result.category == 'Custom') {
+          enhancedResults.add(result);
+          continue;
+        }
+
+        try {
+          final nutrition = await _mlService.getNutrition(result.name);
+          if (nutrition != null) {
+            enhancedResults.add(FoodItem(
+              id: result.id,
+              name: nutrition.foodName,
+              calories: nutrition.calories,
+              protein: nutrition.protein,
+              carbs: nutrition.carbohydrates,
+              fat: nutrition.fat,
+              category: 'Nutritionix API',
+              nutritionalInfo: result.nutritionalInfo,
+            ));
+          } else {
+            enhancedResults.add(result);
+          }
+        } catch (e, stackTrace) {
+          print('Error getting nutrition for ${result.name}: $e');
+          print(stackTrace);
           enhancedResults.add(result);
         }
-      } catch (e) {
-        print('Error getting nutrition for ${result.name}: $e');
-        enhancedResults.add(result);
       }
-    }
 
-    setState(() {
-      _searchResults = enhancedResults;
-      _isSearching = false;
-    });
+      setState(() {
+        _searchResults = enhancedResults;
+        _isSearching = false;
+      });
+    } catch (e, stackTrace) {
+      print('Database search failed for "$trimmed": $e');
+      print(stackTrace);
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+        _showSuggestions = true;
+      });
+    }
   }
 
-  List<FoodItem> _searchLocally(String query) {
-    final results = <FoodItem>[];
-    final lowerQuery = query.toLowerCase();
+  Future<void> _loadInitialSuggestions() async {
+    await _updateSuggestions('');
+  }
 
-    // Search in common foods
-    for (final food in _commonFoods) {
-      if (food.toLowerCase().contains(lowerQuery)) {
-        final nutrition = _basicNutritionData[food];
-        if (nutrition != null) {
-          results.add(FoodItem(
-            id: DateTime.now().millisecondsSinceEpoch.toString() + food,
-            name: food,
-            calories: nutrition['calories'] ?? 0,
-            protein: nutrition['protein'] ?? 0,
-            carbs: nutrition['carbs'] ?? 0,
-            fat: nutrition['fat'] ?? 0,
-            category: 'Common Foods',
-          ));
+  Future<void> _updateSuggestions(String rawQuery) async {
+    final trimmed = rawQuery.trim();
+    final requestId = ++_suggestionRequestId;
+
+    try {
+      final names = trimmed.isEmpty
+          ? await _nutritionDb.getDefaultFoods(limit: 10)
+          : await _nutritionDb.searchFoods(trimmed);
+
+      if (!mounted || requestId != _suggestionRequestId) {
+        return;
+      }
+
+      final limited = names.take(10).toList();
+
+      final nutritionEntries = await Future.wait(
+        limited.map(
+          (name) async => MapEntry(name, await _nutritionDb.getNutrition(name)),
+        ),
+      );
+
+      if (!mounted || requestId != _suggestionRequestId) {
+        return;
+      }
+
+      final nutritionMap = <String, Map<String, double>>{};
+      for (final entry in nutritionEntries) {
+        final data = entry.value;
+        if (data != null) {
+          nutritionMap[entry.key] = data;
         }
       }
+
+      setState(() {
+        _suggestions = limited;
+        _suggestionNutrition
+          ..clear()
+          ..addAll(nutritionMap);
+      });
+    } catch (e, stackTrace) {
+      print('Suggestion update failed for "$rawQuery": $e');
+      print(stackTrace);
+    }
+  }
+
+  Future<List<FoodItem>> _searchDatabase(String query) async {
+    final names = await _nutritionDb.searchFoods(query);
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+
+    final nutritionEntries = await Future.wait(
+      names.map(
+        (name) async => MapEntry(name, await _nutritionDb.getNutrition(name)),
+      ),
+    );
+
+    final results = <FoodItem>[];
+    for (var i = 0; i < nutritionEntries.length; i++) {
+      final entry = nutritionEntries[i];
+      final nutrition = entry.value;
+      if (nutrition == null) {
+        continue;
+      }
+
+      results.add(FoodItem(
+        id: '${timestamp}_$i',
+        name: entry.key,
+        calories: nutrition['calories'] ?? 0,
+        protein: nutrition['protein'] ?? 0,
+        carbs: nutrition['carbs'] ?? 0,
+        fat: nutrition['fat'] ?? 0,
+        category: 'SQLite Nutrition DB',
+        nutritionalInfo: {
+          'fiber': nutrition['fiber'] ?? 0,
+        },
+      ));
     }
 
-    // Add a generic option for the exact search
-    if (!results.any((f) => f.name.toLowerCase() == lowerQuery)) {
+    print('Local DB returned ${results.length} candidates for "$query"');
+
+    final lowerQuery = query.toLowerCase();
+    final hasExactMatch =
+        results.any((item) => item.name.toLowerCase() == lowerQuery);
+    if (!hasExactMatch) {
       results.add(FoodItem(
-        id: DateTime.now().millisecondsSinceEpoch.toString() + 'custom',
+        id: '${timestamp}_custom',
         name: query,
         calories: 0,
         protein: 0,
@@ -150,12 +200,12 @@ class _ManualFoodSearchScreenState extends State<ManualFoodSearchScreen> {
   }
 
   List<String> _getFilteredSuggestions() {
-    if (_searchController.text.isEmpty) {
-      return _commonFoods.take(10).toList();
+    final query = _searchController.text.toLowerCase().trim();
+    if (query.isEmpty) {
+      return _suggestions.take(10).toList();
     }
-    
-    final query = _searchController.text.toLowerCase();
-    return _commonFoods
+
+    return _suggestions
         .where((food) => food.toLowerCase().contains(query))
         .take(10)
         .toList();
@@ -199,8 +249,10 @@ class _ManualFoodSearchScreenState extends State<ManualFoodSearchScreen> {
                           _searchController.clear();
                           setState(() {
                             _searchResults = [];
+                            _isSearching = false;
                             _showSuggestions = true;
                           });
+                          _updateSuggestions('');
                         },
                       )
                     : null,
@@ -209,15 +261,31 @@ class _ManualFoodSearchScreenState extends State<ManualFoodSearchScreen> {
                 ),
               ),
               onChanged: (value) {
-                setState(() {});
-                if (value.isNotEmpty) {
-                  _performSearch(value);
-                } else {
+                _searchDebounce?.cancel();
+                if (_skipNextTextChange) {
+                  _skipNextTextChange = false;
+                  return;
+                }
+                _updateSuggestions(value);
+
+                final trimmed = value.trim();
+                if (trimmed.isEmpty) {
                   setState(() {
                     _searchResults = [];
+                    _isSearching = false;
                     _showSuggestions = true;
                   });
+                  return;
                 }
+
+                setState(() {
+                  _showSuggestions = true;
+                });
+
+                _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+                  if (!mounted) return;
+                  _performSearch(value);
+                });
               },
               onSubmitted: _performSearch,
             ),
@@ -238,7 +306,13 @@ class _ManualFoodSearchScreenState extends State<ManualFoodSearchScreen> {
 
   Widget _buildSuggestionsView() {
     final suggestions = _getFilteredSuggestions();
-    
+
+    if (suggestions.isEmpty) {
+      return const Center(
+        child: Text('No suggestions yet. Start typing to search.'),
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       children: [
@@ -254,20 +328,29 @@ class _ManualFoodSearchScreenState extends State<ManualFoodSearchScreen> {
             ),
           ),
         ],
-        ...suggestions.map((food) => Card(
-          child: ListTile(
-            leading: const Icon(Icons.fastfood),
-            title: Text(food),
-            subtitle: _basicNutritionData.containsKey(food)
-                ? Text('${_basicNutritionData[food]!['calories']!.toInt()} cal per 100g')
-                : null,
-            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-            onTap: () {
-              _searchController.text = food;
-              _performSearch(food);
-            },
-          ),
-        )),
+        ...suggestions.map((food) {
+          final nutrition = _suggestionNutrition[food];
+          return Card(
+            child: ListTile(
+              leading: const Icon(Icons.fastfood),
+              title: Text(food),
+              subtitle: nutrition != null
+                  ? Text(
+                      '${nutrition['calories']?.toStringAsFixed(0) ?? '0'} cal · '
+                      '${nutrition['protein']?.toStringAsFixed(1) ?? '0.0'}g protein',
+                    )
+                  : null,
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: () {
+                FocusScope.of(context).unfocus();
+                _searchDebounce?.cancel();
+                _skipNextTextChange = true;
+                _searchController.text = food;
+                _performSearch(food);
+              },
+            ),
+          );
+        }),
       ],
     );
   }
@@ -296,7 +379,7 @@ class _ManualFoodSearchScreenState extends State<ManualFoodSearchScreen> {
       itemCount: _searchResults.length,
       itemBuilder: (context, index) {
         final food = _searchResults[index];
-        
+
         return Card(
           child: ListTile(
             leading: CircleAvatar(
@@ -312,7 +395,8 @@ class _ManualFoodSearchScreenState extends State<ManualFoodSearchScreen> {
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('${food.calories.toInt()} cal · ${food.protein.toStringAsFixed(1)}g protein'),
+                Text(
+                    '${food.calories.toInt()} cal · ${food.protein.toStringAsFixed(1)}g protein'),
                 if (food.category != null)
                   Text(
                     food.category!,
@@ -333,6 +417,7 @@ class _ManualFoodSearchScreenState extends State<ManualFoodSearchScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
