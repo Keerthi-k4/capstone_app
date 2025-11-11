@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'direct_diet_service.dart';
+import 'daily_nutrition_service.dart';
+import 'user_goals_service.dart';
 
 class FoodLog {
   final String? id;
@@ -89,6 +91,10 @@ class FoodRecommendation {
   final double quantity;
   final String userId;
   final bool accepted;
+  final double protein;
+  final double carbs;
+  final double fat;
+  final double fiber;
 
   FoodRecommendation({
     this.id,
@@ -100,6 +106,10 @@ class FoodRecommendation {
     this.quantity = 1.0,
     required this.userId,
     this.accepted = false,
+    this.protein = 0.0,
+    this.carbs = 0.0,
+    this.fat = 0.0,
+    this.fiber = 0.0,
   });
 
   factory FoodRecommendation.fromJson(
@@ -112,6 +122,10 @@ class FoodRecommendation {
       reasoning: json['reasoning'] ?? '',
       quantity: (json['quantity'] ?? 1.0).toDouble(),
       userId: userId,
+      protein: (json['protein'] ?? 0.0).toDouble(),
+      carbs: (json['carbs'] ?? 0.0).toDouble(),
+      fat: (json['fat'] ?? 0.0).toDouble(),
+      fiber: (json['fiber'] ?? 0.0).toDouble(),
     );
   }
 
@@ -125,6 +139,10 @@ class FoodRecommendation {
       'quantity': quantity,
       'accepted': accepted,
       'userId': userId,
+      'protein': protein,
+      'carbs': carbs,
+      'fat': fat,
+      'fiber': fiber,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
@@ -142,6 +160,10 @@ class FoodRecommendation {
       quantity: (data['quantity'] ?? 1.0).toDouble(),
       userId: data['userId'] ?? '',
       accepted: data['accepted'] ?? false,
+      protein: (data['protein'] ?? 0.0).toDouble(),
+      carbs: (data['carbs'] ?? 0.0).toDouble(),
+      fat: (data['fat'] ?? 0.0).toDouble(),
+      fiber: (data['fiber'] ?? 0.0).toDouble(),
     );
   }
 }
@@ -405,12 +427,44 @@ class FoodFirestoreService {
         print('⚠️ Could not fetch user profile: $e');
       }
 
+      // Build goals and today's progress context
+      final goals = await UserGoalsService().getGoalsOnce();
+      final daily = await DailyNutritionService().getTodayNutrition();
+      final todayProgress = {
+        'caloriesConsumed': daily.caloriesConsumed,
+        'proteinConsumed': daily.proteinConsumed,
+        'carbsConsumed': daily.carbsConsumed,
+        'fatsConsumed': daily.fatsConsumed,
+        'fiberConsumed': daily.fiberConsumed,
+        'proteinTarget': daily.proteinTarget,
+        'carbsTarget': daily.carbsTarget,
+        'fatsTarget': daily.fatsTarget,
+        'fiberTarget': daily.fiberTarget,
+        'steps': daily.steps,
+        'stepsTarget': daily.stepsTarget,
+        'exerciseMinutes': daily.exerciseMinutes,
+        'exerciseTarget': daily.exerciseTarget,
+        'sleepHours': daily.sleepHours,
+      };
+      final userGoals = {
+        'caloriesTarget': goals.caloriesTarget,
+        'proteinGramsTarget': goals.proteinGramsTarget,
+        'carbsGramsTarget': goals.carbsGramsTarget,
+        'fatsGramsTarget': goals.fatsGramsTarget,
+        'fiberGramsTarget': goals.fiberGramsTarget,
+        'stepsTarget': goals.stepsTarget,
+        'exerciseMinutesTarget': goals.exerciseMinutesTarget,
+        'waterGlassesTarget': goals.waterGlassesTarget,
+      };
+
       // Call direct diet service (similar to exercise planning)
       print('🤖 Calling DirectDietService...');
       final recommendations = await DirectDietService.generateRecommendations(
         date: date,
         recentLogs: logsForApi,
         userProfile: userProfile,
+        userGoals: userGoals,
+        todayProgress: todayProgress,
       );
 
       print('✨ Generated ${recommendations.length} recommendations');
@@ -449,6 +503,7 @@ class FoodFirestoreService {
             'protein': rec['protein'] ?? 0,
             'carbs': rec['carbs'] ?? 0,
             'fat': rec['fat'] ?? 0,
+            'fiber': rec['fiber'] ?? 0,
             'createdAt': FieldValue.serverTimestamp(),
           });
           insertedCount++;

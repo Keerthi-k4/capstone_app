@@ -15,6 +15,26 @@ class _DietPlansScreenState extends State<DietPlansScreen> {
   List<FoodRecommendation> _recommendations = [];
   bool isLoading = true;
   bool isGeneratingRecommendations = false;
+  final Map<String, bool> _expanded = {};
+  final Map<String, Map<String, TextEditingController>> _editCtrls = {};
+
+  Map<String, TextEditingController> _ensureControllers(
+      FoodRecommendation rec) {
+    final id = rec.id ?? rec.item;
+    if (_editCtrls[id] != null) return _editCtrls[id]!;
+    final ctrls = <String, TextEditingController>{
+      'name': TextEditingController(text: rec.item),
+      'mealType': TextEditingController(text: rec.mealType),
+      'quantity': TextEditingController(text: rec.quantity.toStringAsFixed(1)),
+      'calories': TextEditingController(text: rec.calories.toString()),
+      'protein': TextEditingController(text: rec.protein.toStringAsFixed(1)),
+      'carbs': TextEditingController(text: rec.carbs.toStringAsFixed(1)),
+      'fat': TextEditingController(text: rec.fat.toStringAsFixed(1)),
+      'fiber': TextEditingController(text: rec.fiber.toStringAsFixed(1)),
+    };
+    _editCtrls[id] = ctrls;
+    return ctrls;
+  }
 
   @override
   void initState() {
@@ -128,31 +148,30 @@ class _DietPlansScreenState extends State<DietPlansScreen> {
   Future<void> _toggleRecommendationAcceptance(
       String recId, bool currentAccepted) async {
     try {
-      final newAccepted = !currentAccepted;
-      
-      if (newAccepted) {
-        // When accepting, add it to food logs
-        final recommendation = _recommendations.firstWhere((r) => r.id == recId);
-        
-        // Create a food log from the recommendation (userId will be set automatically)
+      // If pressing tick and not accepted yet: add directly without editing
+      if (!currentAccepted) {
+        final rec = _recommendations.firstWhere((r) => r.id == recId);
+        // Create log from recommendation values as-is
         final foodLog = FoodLog(
-          name: recommendation.item,
-          calories: recommendation.calories,
-          mealType: recommendation.mealType,
+          name: rec.item,
+          calories: rec.calories,
+          mealType: rec.mealType,
           date: widget.date,
-          quantity: recommendation.quantity,
-          userId: '', // Will be set by insertLog method
+          quantity: rec.quantity,
+          userId: '',
+          protein: rec.protein,
+          carbs: rec.carbs,
+          fat: rec.fat,
+          fiber: rec.fiber,
         );
-        
-        // Add to food logs
         await _firestoreService.insertLog(foodLog);
-        print('✅ Added recommendation to food logs: ${recommendation.item}');
+        await _firestoreService.updateRecommendation(recId, {'accepted': true});
+      } else {
+        // Unmark acceptance only
+        await _firestoreService
+            .updateRecommendation(recId, {'accepted': false});
       }
-      
-      // Update the accepted status
-      await _firestoreService
-          .updateRecommendation(recId, {'accepted': newAccepted});
-      
+
       // Reload both logs and recommendations
       await Future.wait([
         _loadLogs(),
@@ -162,10 +181,10 @@ class _DietPlansScreenState extends State<DietPlansScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(newAccepted
-                ? 'Added to food logs!'
-                : 'Recommendation unmarked'),
-            backgroundColor: newAccepted ? Colors.green : Colors.grey,
+            content: Text(currentAccepted
+                ? 'Recommendation unmarked'
+                : 'Added to food logs!'),
+            backgroundColor: currentAccepted ? Colors.grey : Colors.green,
           ),
         );
       }
@@ -181,6 +200,8 @@ class _DietPlansScreenState extends State<DietPlansScreen> {
       }
     }
   }
+
+  // Inline expansion handled in list; editing UI removed per requirements.
 
   Future<void> _deleteRecommendation(String recId, String itemName) async {
     // Show confirmation dialog
@@ -302,6 +323,7 @@ class _DietPlansScreenState extends State<DietPlansScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
+            // Left side - Title and subtitle
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -309,6 +331,7 @@ class _DietPlansScreenState extends State<DietPlansScreen> {
                   "AI Recommendations",
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
+                const SizedBox(height: 2),
                 Text(
                   'For today',
                   style: TextStyle(
@@ -319,38 +342,44 @@ class _DietPlansScreenState extends State<DietPlansScreen> {
                 ),
               ],
             ),
-            Row(
-              children: [
-                if (recs.isNotEmpty)
+
+            // Right side - Generate button
+            ElevatedButton(
+              onPressed:
+                  isGeneratingRecommendations ? null : _generateRecommendations,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isGeneratingRecommendations)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  else
+                    const Icon(Icons.auto_awesome, size: 18),
+                  const SizedBox(width: 8),
                   Text(
-                    '${recs.length} items',
-                    style: TextStyle(
+                    isGeneratingRecommendations ? 'Generating...' : 'Generate',
+                    style: const TextStyle(
                       fontSize: 14,
-                      color: Colors.grey[600],
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  onPressed: isGeneratingRecommendations
-                      ? null
-                      : _generateRecommendations,
-                  icon: isGeneratingRecommendations
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.auto_awesome, size: 16),
-                  label: Text(isGeneratingRecommendations
-                      ? 'Generating...'
-                      : 'Generate'),
-                  style: ElevatedButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
@@ -380,85 +409,271 @@ class _DietPlansScreenState extends State<DietPlansScreen> {
             return Card(
               elevation: 2,
               margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: _getMealTypeColor(rec.mealType),
-                  child: Icon(
-                    _getMealTypeIcon(rec.mealType),
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-                title: Text(
-                  itemName,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w500,
-                    decoration: isAccepted ? TextDecoration.lineThrough : null,
-                    color: isAccepted ? Colors.grey : null,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ListTile(
+                    onTap: () {
+                      setState(() {
+                        // Toggle expansion by id
+                        _expanded[recId] = !(_expanded[recId] ?? false);
+                      });
+                    },
+                    leading: CircleAvatar(
+                      backgroundColor: _getMealTypeColor(rec.mealType),
+                      child: Icon(
+                        _getMealTypeIcon(rec.mealType),
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(
+                      itemName,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        decoration:
+                            isAccepted ? TextDecoration.lineThrough : null,
+                        color: isAccepted ? Colors.grey : null,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
                       '${rec.calories} kcal • ${_capitalize(rec.mealType)}',
                       style: TextStyle(color: Colors.grey[600]),
                     ),
-                    if (rec.reasoning.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          rec.reasoning,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.blue[700],
-                            fontStyle: FontStyle.italic,
+                    trailing: SizedBox(
+                      width: 96,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              isAccepted
+                                  ? Icons.check_circle
+                                  : Icons.check_circle_outline,
+                              color: isAccepted ? Colors.green : Colors.grey,
+                              size: 22,
+                            ),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 40,
+                              minHeight: 40,
+                            ),
+                            onPressed: () => _toggleRecommendationAcceptance(
+                                recId, isAccepted),
+                            tooltip: isAccepted
+                                ? 'Mark as pending'
+                                : 'Accept & track',
                           ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline,
+                                color: Colors.red, size: 22),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 40,
+                              minHeight: 40,
+                            ),
+                            onPressed: () =>
+                                _deleteRecommendation(recId, itemName),
+                            tooltip: 'Delete recommendation',
+                          ),
+                        ],
                       ),
-                  ],
-                ),
-                trailing: SizedBox(
-                  width: 96, // Fixed width to prevent overflow
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: Icon(
-                          isAccepted
-                              ? Icons.check_circle
-                              : Icons.check_circle_outline,
-                          color: isAccepted ? Colors.green : Colors.grey,
-                          size: 22,
-                        ),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 40,
-                          minHeight: 40,
-                        ),
-                        onPressed: () =>
-                            _toggleRecommendationAcceptance(recId, isAccepted),
-                        tooltip:
-                            isAccepted ? 'Mark as pending' : 'Accept & track',
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, color: Colors.red, size: 22),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 40,
-                          minHeight: 40,
-                        ),
-                        onPressed: () => _deleteRecommendation(recId, itemName),
-                        tooltip: 'Delete recommendation',
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-                isThreeLine: rec.reasoning.isNotEmpty,
+                  if (_expanded[recId] ?? false) ...[
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Builder(builder: (context) {
+                            final ctrls = _ensureControllers(rec);
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Reasoning',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  rec.reasoning,
+                                  style: TextStyle(color: Colors.blueGrey[800]),
+                                ),
+                                const SizedBox(height: 12),
+                                TextField(
+                                  controller: ctrls['name'],
+                                  decoration: const InputDecoration(
+                                    labelText: 'Food Name',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: ctrls['mealType'],
+                                        decoration: const InputDecoration(
+                                          labelText: 'Meal Type',
+                                          hintText:
+                                              'breakfast/lunch/dinner/snack',
+                                          border: OutlineInputBorder(),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: TextField(
+                                        controller: ctrls['quantity'],
+                                        keyboardType: TextInputType.number,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Quantity',
+                                          border: OutlineInputBorder(),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: ctrls['calories'],
+                                        keyboardType: TextInputType.number,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Calories',
+                                          border: OutlineInputBorder(),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: TextField(
+                                        controller: ctrls['protein'],
+                                        keyboardType: TextInputType.number,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Protein (g)',
+                                          border: OutlineInputBorder(),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: ctrls['carbs'],
+                                        keyboardType: TextInputType.number,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Carbs (g)',
+                                          border: OutlineInputBorder(),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: TextField(
+                                        controller: ctrls['fat'],
+                                        keyboardType: TextInputType.number,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Fat (g)',
+                                          border: OutlineInputBorder(),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                TextField(
+                                  controller: ctrls['fiber'],
+                                  keyboardType: TextInputType.number,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Fiber (g)',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.check),
+                              label: const Text('Accept & Log'),
+                              onPressed: () async {
+                                final ctrls = _ensureControllers(rec);
+                                final updatedName = ctrls['name']!.text.trim();
+                                final updatedMealType =
+                                    ctrls['mealType']!.text.trim().isEmpty
+                                        ? rec.mealType
+                                        : ctrls['mealType']!.text.trim();
+                                final updatedQuantity =
+                                    double.tryParse(ctrls['quantity']!.text) ??
+                                        rec.quantity;
+                                final updatedCalories =
+                                    int.tryParse(ctrls['calories']!.text) ??
+                                        rec.calories;
+                                final updatedProtein =
+                                    double.tryParse(ctrls['protein']!.text) ??
+                                        rec.protein;
+                                final updatedCarbs =
+                                    double.tryParse(ctrls['carbs']!.text) ??
+                                        rec.carbs;
+                                final updatedFat =
+                                    double.tryParse(ctrls['fat']!.text) ??
+                                        rec.fat;
+                                final updatedFiber =
+                                    double.tryParse(ctrls['fiber']!.text) ??
+                                        rec.fiber;
+
+                                final foodLog = FoodLog(
+                                  name: updatedName.isEmpty
+                                      ? rec.item
+                                      : updatedName,
+                                  calories: updatedCalories,
+                                  mealType: updatedMealType,
+                                  date: widget.date,
+                                  quantity: updatedQuantity,
+                                  userId: '',
+                                  protein: updatedProtein,
+                                  carbs: updatedCarbs,
+                                  fat: updatedFat,
+                                  fiber: updatedFiber,
+                                );
+                                await _firestoreService.insertLog(foodLog);
+                                await _firestoreService.updateRecommendation(
+                                    recId, {'accepted': true});
+                                await Future.wait([
+                                  _loadLogs(),
+                                  _loadRecommendations(),
+                                ]);
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Added to food logs!'),
+                                      backgroundColor: Colors.green,
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
               ),
             );
           }),

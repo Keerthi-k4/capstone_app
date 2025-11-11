@@ -10,6 +10,8 @@ class DirectDietService {
     required String date,
     required List<Map<String, dynamic>> recentLogs,
     Map<String, dynamic>? userProfile,
+    Map<String, dynamic>? userGoals,
+    Map<String, dynamic>? todayProgress,
   }) async {
     final apiKey = dotenv.env['DIET_API_KEY'];
     final model =
@@ -45,6 +47,38 @@ class DirectDietService {
     print(
         '📈 Total nutrition - Calories: $totalCalories, Protein: ${totalProtein.toStringAsFixed(1)}g, Carbs: ${totalCarbs.toStringAsFixed(1)}g, Fat: ${totalFat.toStringAsFixed(1)}g');
 
+    // Build contexts
+    final today = date;
+    final todaysLogs = recentLogs.where((l) => l['date'] == today).toList();
+    final todaysContext = todaysLogs.map((l) {
+      return '- ${l['name']}: ${l['calories']} cal '
+          'P:${(l['protein'] ?? 0).toString()}g C:${(l['carbs'] ?? 0).toString()}g F:${(l['fat'] ?? 0).toString()}g';
+    }).join('\n');
+
+    final goalsText = userGoals == null
+        ? 'unknown'
+        : 'Calories:${userGoals['caloriesTarget'] ?? 'unknown'}, '
+            'Protein:${userGoals['proteinGramsTarget'] ?? 'unknown'}g, '
+            'Carbs:${userGoals['carbsGramsTarget'] ?? 'unknown'}g, '
+            'Fats:${userGoals['fatsGramsTarget'] ?? 'unknown'}g, '
+            'Fiber:${userGoals['fiberGramsTarget'] ?? 'unknown'}g, '
+            'Steps:${userGoals['stepsTarget'] ?? 'unknown'}, '
+            'Exercise:${userGoals['exerciseMinutesTarget'] ?? 'unknown'} min';
+
+    final progressText = todayProgress == null
+        ? 'unknown'
+        : [
+            'Today so far:',
+            'Calories Consumed: ${todayProgress['caloriesConsumed'] ?? 0}',
+            'Protein: ${todayProgress['proteinConsumed'] ?? 0}/${todayProgress['proteinTarget'] ?? 0}g',
+            'Carbs: ${todayProgress['carbsConsumed'] ?? 0}/${todayProgress['carbsTarget'] ?? 0}g',
+            'Fats: ${todayProgress['fatsConsumed'] ?? 0}/${todayProgress['fatsTarget'] ?? 0}g',
+            'Fiber: ${todayProgress['fiberConsumed'] ?? 0}/${todayProgress['fiberTarget'] ?? 0}g',
+            'Steps: ${todayProgress['steps'] ?? 0}/${todayProgress['stepsTarget'] ?? 0}',
+            'Exercise: ${todayProgress['exerciseMinutes'] ?? 0}/${todayProgress['exerciseTarget'] ?? 0} min',
+            'Sleep: ${todayProgress['sleepHours'] ?? 0} h',
+          ].join('\n');
+
     // Build the prompt for the AI
     final prompt = """
 You are a practical nutrition expert providing simple, everyday meal recommendations for tomorrow.
@@ -52,6 +86,8 @@ You are a practical nutrition expert providing simple, everyday meal recommendat
 CONTEXT:
 Recent meals eaten:
 $logsContext
+Today's meals (same day):
+$todaysContext
 
 Total recent intake: $totalCalories cal, ${totalProtein.toStringAsFixed(1)}g protein, ${totalCarbs.toStringAsFixed(1)}g carbs, ${totalFat.toStringAsFixed(1)}g fat
 
@@ -62,19 +98,25 @@ USER PROFILE:
 - Goal: ${userProfile?['goal'] ?? 'maintenance'}
 - Medical Concerns: ${userProfile?['medicalConcerns'] ?? 'none'}
 
+USER GOALS (targets):
+$goalsText
+
+TODAY'S PROGRESS:
+$progressText
+
 TASK:
-Suggest 3 SIMPLE, everyday meals for tomorrow that:
+Suggest 3 regular, everyday meals for tomorrow that:
 1. Balance the nutrition (add more protein if lacking, more vegetables if needed, etc.)
 2. Are easy to prepare at home with common ingredients
 3. Match the user's dietary goals and health profile
 4. Avoid foods the user has eaten recently to add variety
+5. Prefer meals that help close the remaining gaps toward today's macro targets (protein/carbs/fats/fiber) while keeping calories on target. If the user already exceeded a target, recommend lighter options.
 
 IMPORTANT GUIDELINES:
-- Keep it SIMPLE - basic home cooking, no fancy restaurant dishes
-- Use REAL dish names people actually eat (e.g., "Dal Tadka with Rice", "Scrambled Eggs with Toast", "Grilled Chicken Salad")
-- Distribute meals across breakfast, lunch, and dinner appropriately
+- Keep it simple - basic home cooking, no fancy restaurant dishes
+ - Distribute meals across breakfast, lunch, and dinner appropriately
 - Consider portion sizes and realistic calorie counts
-- Provide clear reasoning for each recommendation
+- Provide clear reasoning for each recommendation. What gaps it is filling and why it is a good choice. Why it is good based on the user's goals and health profile.
 
 CRITICAL: Respond ONLY with valid JSON in this EXACT format, NO extra text before or after:
 {
@@ -87,7 +129,8 @@ CRITICAL: Respond ONLY with valid JSON in this EXACT format, NO extra text befor
       "protein": 20,
       "carbs": 35,
       "fat": 10,
-      "quantity": 1.0
+      "fiber": 5,
+      "quantity": 100.0
     },
     {
       "item": "Another simple dish",
@@ -97,7 +140,8 @@ CRITICAL: Respond ONLY with valid JSON in this EXACT format, NO extra text befor
       "protein": 30,
       "carbs": 50,
       "fat": 15,
-      "quantity": 1.0
+      "fiber": 6,
+      "quantity": 100.0
     },
     {
       "item": "Third simple dish",
@@ -107,12 +151,12 @@ CRITICAL: Respond ONLY with valid JSON in this EXACT format, NO extra text befor
       "protein": 25,
       "carbs": 45,
       "fat": 12,
-      "quantity": 1.0
+      "fiber": 7,
+      "quantity": 100.0
     }
   ]
 }
 
-Think simple home cooking: dal-rice, egg dishes, simple curries, basic salads, chicken/fish with vegetables, etc.
 Return ONLY the JSON, nothing else.
 """;
 
@@ -176,6 +220,7 @@ Return ONLY the JSON, nothing else.
                     'protein': (rec['protein'] as num?)?.toDouble() ?? 0,
                     'carbs': (rec['carbs'] as num?)?.toDouble() ?? 0,
                     'fat': (rec['fat'] as num?)?.toDouble() ?? 0,
+                    'fiber': (rec['fiber'] as num?)?.toDouble() ?? 0,
                     'quantity': (rec['quantity'] as num?)?.toDouble() ?? 1.0,
                   });
                 }
