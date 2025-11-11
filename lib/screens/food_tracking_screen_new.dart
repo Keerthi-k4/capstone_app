@@ -2,10 +2,11 @@
 File: lib/screens/food_tracking_screen.dart
 */
 import 'package:flutter/material.dart';
-import 'dart:io';
+// import 'dart:io';
 import '../services/food_firestore_service.dart';
 import '../services/image_capture_service.dart';
 import '../services/ml_food_recognition_service.dart';
+import '../services/gemini_food_recognition_service.dart';
 import 'food_confirmation_screen.dart';
 import 'manual_food_search_screen.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -26,6 +27,8 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
   final FoodFirestoreService _firestoreService = FoodFirestoreService();
   final ImageCaptureService _imageService = ImageCaptureService();
   final MLFoodRecognitionService _mlService = MLFoodRecognitionService();
+  final GeminiFoodRecognitionService _geminiService =
+      GeminiFoodRecognitionService();
 
   List<FoodLog> _todayLogs = [];
   late String _today;
@@ -149,6 +152,63 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
     }
   }
 
+  Future<void> _captureAndRecognizeWithGemini() async {
+    try {
+      final imageFile = await _imageService.selectImageSource(context);
+      if (imageFile == null) return;
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Analyzing with Gemini...'),
+            ],
+          ),
+        ),
+      );
+
+      final mlResponse =
+          await _geminiService.predictFoodWithNutrition(imageFile);
+
+      Navigator.of(context).pop();
+
+      if (mlResponse.success) {
+        final result = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (context) => FoodConfirmationScreen(
+              imageFile: imageFile,
+              mlResponse: mlResponse,
+            ),
+          ),
+        );
+        if (result == true) {
+          _loadLogs();
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(mlResponse.error ?? 'Could not recognize food'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gemini error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -200,14 +260,26 @@ class _FoodTrackingScreenState extends State<FoodTrackingScreen> {
                         const SizedBox(width: 16),
                         Expanded(
                           child: ElevatedButton.icon(
-                            onPressed: _captureAndRecognizeFood,
-                            icon: const Icon(Icons.camera_alt),
-                            label: const Text('Take Photo'),
+                            onPressed: _captureAndRecognizeWithGemini,
+                            icon: const Icon(Icons.smart_toy),
+                            label: const Text('Use Gemini (Photo)'),
                             style: ElevatedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 12),
-                              backgroundColor:
-                                  _isServerHealthy ? null : Colors.grey,
                             ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _isServerHealthy
+                                ? _captureAndRecognizeFood
+                                : null,
+                            icon: const Icon(Icons.camera_alt_outlined),
+                            label: const Text('Demo (Legacy ML)'),
                           ),
                         ),
                       ],

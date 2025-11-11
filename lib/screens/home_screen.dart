@@ -8,7 +8,11 @@ import 'goals_screen.dart';
 import 'package:attempt2/services/user_goals_service.dart';
 import 'package:attempt2/services/daily_nutrition_service.dart';
 import 'package:attempt2/services/health_connect_service.dart';
+import 'package:attempt2/services/food_firestore_service.dart';
+import 'dart:async';
 import 'dart:math' as math;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -24,9 +28,18 @@ class _HomeScreenState extends State<HomeScreen> {
   UserGoals _goals = UserGoals.defaults;
   final DailyNutritionService _nutritionService = DailyNutritionService();
   final HealthConnectService _healthConnectService = HealthConnectService();
+  final FoodFirestoreService _foodService = FoodFirestoreService();
   int _todayWater = 0;
   DailyNutrition? _todayNutrition;
   bool _isDemoMode = true; // Default to demo mode
+  StreamSubscription<List<FoodLog>>? _foodLogsSub;
+  Timer? _midnightTimer;
+  String _todayDateStr = DateTime.now().toIso8601String().split('T')[0];
+  int _todayCalories = 0;
+  double _todayProtein = 0;
+  double _todayCarbs = 0;
+  double _todayFats = 0;
+  double _todayFiber = 0;
 
   @override
   void initState() {
@@ -35,6 +48,68 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadWater();
     _loadNutrition();
     _loadHealthMode();
+    _subscribeToTodayFoodLogs();
+    _scheduleMidnightReset();
+  }
+
+  void _subscribeToTodayFoodLogs() {
+    _foodLogsSub?.cancel();
+    _foodLogsSub =
+        _foodService.getLogsByDateStream(_todayDateStr).listen((logs) {
+      int calories = 0;
+      double protein = 0;
+      double carbs = 0;
+      double fats = 0;
+      double fiber = 0;
+      for (final log in logs) {
+        calories += log.calories;
+        protein += log.protein;
+        carbs += log.carbs;
+        fats += log.fat;
+        fiber += log.fiber;
+      }
+      if (mounted) {
+        setState(() {
+          _todayCalories = calories;
+          _todayProtein = protein;
+          _todayCarbs = carbs;
+          _todayFats = fats;
+          _todayFiber = fiber;
+        });
+      }
+    });
+  }
+
+  void _scheduleMidnightReset() {
+    _midnightTimer?.cancel();
+    final now = DateTime.now();
+    final nextMidnight = DateTime(now.year, now.month, now.day).add(
+      const Duration(days: 1),
+    );
+    final duration = nextMidnight.difference(now);
+    _midnightTimer = Timer(duration, _onDateChangedToToday);
+  }
+
+  void _onDateChangedToToday() {
+    _todayDateStr = DateTime.now().toIso8601String().split('T')[0];
+    if (mounted) {
+      setState(() {
+        _todayCalories = 0;
+        _todayProtein = 0;
+        _todayCarbs = 0;
+        _todayFats = 0;
+        _todayFiber = 0;
+      });
+    }
+    _subscribeToTodayFoodLogs();
+    _scheduleMidnightReset();
+  }
+
+  @override
+  void dispose() {
+    _foodLogsSub?.cancel();
+    _midnightTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadHealthMode() async {
@@ -76,7 +151,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 16),
               ListTile(
-                leading: const Icon(Icons.science_outlined, color: Colors.orange),
+                leading:
+                    const Icon(Icons.science_outlined, color: Colors.orange),
                 title: const Text('Demo Mode'),
                 subtitle: const Text('Uses hardcoded sample data'),
                 selected: _isDemoMode,
@@ -113,10 +189,11 @@ class _HomeScreenState extends State<HomeScreen> {
     if (result != null) {
       // Update mode
       await _healthConnectService.setDemoMode(result);
-      
+
       if (!result) {
         // Switching to actual mode - check availability and permissions
-        final isAvailable = await _healthConnectService.isHealthConnectAvailable();
+        final isAvailable =
+            await _healthConnectService.isHealthConnectAvailable();
         if (!isAvailable) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -420,29 +497,73 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _buildStatItem(
-                            'BMI',
-                            user.bmi?.toStringAsFixed(1) ?? 'N/A',
-                            user.bmiCategory,
-                          ),
-                          _buildStatItem(
-                            'Weight',
-                            user.weight != null
-                                ? '${user.weight} kg'
-                                : 'Not set',
-                            'Tap to update',
-                          ),
-                          _buildStatItem(
-                            'Height',
-                            user.height != null
-                                ? '${user.height} cm'
-                                : 'Not set',
-                            'Tap to update',
-                          ),
-                        ],
+                      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                        stream:
+                            fb_auth.FirebaseAuth.instance.currentUser == null
+                                ? const Stream.empty()
+                                : FirebaseFirestore.instance
+                                    .collection('users')
+                                    .doc(fb_auth
+                                        .FirebaseAuth.instance.currentUser!.uid)
+                                    .snapshots(),
+                        builder: (context, snapshot) {
+                          final data = snapshot.data?.data();
+                          final double? weightKg = (data?['weight'] is num)
+                              ? (data!['weight'] as num).toDouble()
+                              : user.weight?.toDouble();
+                          final double? heightCm = (data?['height'] is num)
+                              ? (data!['height'] as num).toDouble()
+                              : user.height?.toDouble();
+                          final double? bmiFromDoc = (data?['bmi'] is num)
+                              ? (data!['bmi'] as num).toDouble()
+                              : user.bmi;
+
+                          double? bmi = bmiFromDoc;
+                          if (bmi == null &&
+                              weightKg != null &&
+                              heightCm != null &&
+                              heightCm > 0) {
+                            final heightM = heightCm / 100.0;
+                            bmi = weightKg / (heightM * heightM);
+                          }
+
+                          String bmiCategory = user.bmiCategory;
+                          if (bmi != null) {
+                            if (bmi < 18.5) {
+                              bmiCategory = 'Underweight';
+                            } else if (bmi < 25) {
+                              bmiCategory = 'Normal';
+                            } else if (bmi < 30) {
+                              bmiCategory = 'Overweight';
+                            } else {
+                              bmiCategory = 'Obese';
+                            }
+                          }
+
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _buildStatItem(
+                                  'BMI',
+                                  bmi != null ? bmi.toStringAsFixed(1) : 'N/A',
+                                  bmi != null ? bmiCategory : 'Tap to update'),
+                              _buildStatItem(
+                                'Weight',
+                                weightKg != null
+                                    ? '${weightKg.toStringAsFixed(1)} kg'
+                                    : 'Not set',
+                                'Tap to update',
+                              ),
+                              _buildStatItem(
+                                'Height',
+                                heightCm != null
+                                    ? '${heightCm.toStringAsFixed(0)} cm'
+                                    : 'Not set',
+                                'Tap to update',
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -527,7 +648,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       Colors.purple,
                       () {
                         Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                          MaterialPageRoute(
+                              builder: (_) => const ProfileScreen()),
                         );
                       },
                     ),
@@ -568,9 +690,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             CustomPaint(
                               size: const Size(200, 200),
                               painter: ActivityRingPainter(
-                                progress: _todayNutrition != null
-                                    ? _todayNutrition!.calorieProgress
-                                    : 0.0,
+                                progress: _goals.caloriesTarget == 0
+                                    ? 0.0
+                                    : (_todayCalories / _goals.caloriesTarget)
+                                        .clamp(0.0, 1.0),
                                 color: Colors.pink,
                                 strokeWidth: 18,
                               ),
@@ -608,9 +731,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  _todayNutrition != null
-                                      ? '${_todayNutrition!.caloriesConsumed}'
-                                      : '0',
+                                  '$_todayCalories',
                                   style: TextStyle(
                                     fontSize: 24,
                                     fontWeight: FontWeight.bold,
@@ -637,9 +758,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           _buildActivityStat(
                             'Calories',
-                            _todayNutrition != null
-                                ? '${_todayNutrition!.caloriesConsumed}'
-                                : '0',
+                            '$_todayCalories',
                             '${_goals.caloriesTarget}',
                             Colors.pink,
                             Icons.local_fire_department,
@@ -742,7 +861,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               value: _todayNutrition != null &&
                                       _todayNutrition!.oxygenSaturation > 0
                                   ? _todayNutrition!.oxygenSaturation
-                                              .toStringAsFixed(1)
+                                      .toStringAsFixed(1)
                                   : '--',
                               unit: '%',
                             ),
@@ -761,7 +880,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               value: _todayNutrition != null &&
                                       _todayNutrition!.sleepHours > 0
                                   ? _todayNutrition!.sleepHours
-                                              .toStringAsFixed(1)
+                                      .toStringAsFixed(1)
                                   : '--',
                               unit: 'hours',
                             ),
@@ -820,13 +939,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   Expanded(
                     child: _buildGoalCard(
                       'Protein',
-                      _todayNutrition != null
-                          ? '${_todayNutrition!.proteinConsumed}'
-                          : '0',
+                      '${_todayProtein.round()}',
                       '${_goals.proteinGramsTarget}g',
-                      _todayNutrition != null
-                          ? _todayNutrition!.proteinProgress
-                          : 0.0,
+                      _goals.proteinGramsTarget == 0
+                          ? 0.0
+                          : (_todayProtein / _goals.proteinGramsTarget)
+                              .clamp(0.0, 1.0),
                       Colors.orange,
                       Icons.egg,
                     ),
@@ -841,13 +959,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   Expanded(
                     child: _buildGoalCard(
                       'Carbs',
-                      _todayNutrition != null
-                          ? '${_todayNutrition!.carbsConsumed}'
-                          : '0',
+                      '${_todayCarbs.round()}',
                       '${_goals.carbsGramsTarget}g',
-                      _todayNutrition != null
-                          ? _todayNutrition!.carbsProgress
-                          : 0.0,
+                      _goals.carbsGramsTarget == 0
+                          ? 0.0
+                          : (_todayCarbs / _goals.carbsGramsTarget)
+                              .clamp(0.0, 1.0),
                       Colors.amber[700]!,
                       Icons.grain,
                     ),
@@ -856,13 +973,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   Expanded(
                     child: _buildGoalCard(
                       'Fats',
-                      _todayNutrition != null
-                          ? '${_todayNutrition!.fatsConsumed}'
-                          : '0',
+                      '${_todayFats.round()}',
                       '${_goals.fatsGramsTarget}g',
-                      _todayNutrition != null
-                          ? _todayNutrition!.fatsProgress
-                          : 0.0,
+                      _goals.fatsGramsTarget == 0
+                          ? 0.0
+                          : (_todayFats / _goals.fatsGramsTarget)
+                              .clamp(0.0, 1.0),
                       Colors.yellow[800]!,
                       Icons.oil_barrel,
                     ),
@@ -877,13 +993,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   Expanded(
                     child: _buildGoalCard(
                       'Fiber',
-                      _todayNutrition != null
-                          ? '${_todayNutrition!.fiberConsumed}'
-                          : '0',
+                      '${_todayFiber.round()}',
                       '${_goals.fiberGramsTarget}g',
-                      _todayNutrition != null
-                          ? _todayNutrition!.fiberProgress
-                          : 0.0,
+                      _goals.fiberGramsTarget == 0
+                          ? 0.0
+                          : (_todayFiber / _goals.fiberGramsTarget)
+                              .clamp(0.0, 1.0),
                       Colors.green[700]!,
                       Icons.grass,
                     ),
@@ -896,7 +1011,8 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 16),
 
               // Calorie Balance Meter
-              if (_todayNutrition != null) _buildCalorieBalanceMeter(),
+              // Calorie Balance Meter
+              if (_goals.caloriesTarget > 0) _buildCalorieBalanceMeter(),
 
               const SizedBox(height: 16),
               SizedBox(
@@ -1178,9 +1294,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildCalorieBalanceMeter() {
-    final nutrition = _todayNutrition!;
-    final isDeficit = nutrition.isCalorieDeficit;
-    final balanceValue = nutrition.caloriesRemaining.abs();
+    final int target = _goals.caloriesTarget;
+    final int consumed = _todayCalories;
+    final int balance = target - consumed;
+    final bool isDeficit = balance > 0;
+    final int balanceValue = balance.abs();
+    final double maxValue = target.toDouble().clamp(1.0, 4000.0);
 
     return Card(
       elevation: 4,
@@ -1211,7 +1330,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     painter: CalorieGaugePainter(
                       deficitValue: isDeficit ? balanceValue.toDouble() : 0.0,
                       surplusValue: !isDeficit ? balanceValue.toDouble() : 0.0,
-                      maxValue: 1000.0, // Adjust based on your needs
+                      maxValue: maxValue,
                     ),
                   ),
 
@@ -1219,18 +1338,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        isDeficit ? Icons.trending_down : Icons.trending_up,
-                        color: isDeficit ? Colors.green : Colors.orange,
-                        size: 24,
-                      ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 20),
                       Text(
                         '${isDeficit ? '-' : '+'}$balanceValue',
                         style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
                           color: isDeficit ? Colors.green : Colors.orange,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Target: $target\nConsumed: $consumed',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
                         ),
                       ),
                     ],
@@ -1399,10 +1522,10 @@ class CalorieGaugePainter extends CustomPainter {
         ..strokeWidth = 20
         ..strokeCap = StrokeCap.round;
 
-      // Start from center (π/2) and move clockwise to rightmost
+      // Start from center (3π/2) and move clockwise to rightmost
       canvas.drawArc(
         rect,
-        math.pi / 2, // middle of the gauge
+        1.5 * math.pi, // middle of the gauge
         math.pi / 2 * progress, // right side arc
         false,
         paint,

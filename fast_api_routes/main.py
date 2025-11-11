@@ -25,7 +25,7 @@ from langchain_groq import ChatGroq
 
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "moonshotai/kimi-k2-instruct")
+GROQ_MODEL = os.getenv("GROQ_MODEL", " moonshotai/kimi-k2-instruct-0905")
 
 if not GROQ_API_KEY:
     raise RuntimeError("GROQ_API_KEY environment variable not set. Please check your .env file.")
@@ -362,4 +362,4 @@ if __name__ == "__main__":
         port=8000,
         reload=True,
         log_level="info"
-    )
+        )

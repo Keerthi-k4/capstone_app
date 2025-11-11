@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:io';
 import '../models/food_model.dart';
 import '../services/food_firestore_service.dart';
+import '../services/nutrition_db_helper.dart';
 import '../services/ml_food_recognition_service.dart';
 
 class FoodConfirmationScreen extends StatefulWidget {
@@ -97,14 +98,29 @@ class _FoodConfirmationScreenState extends State<FoodConfirmationScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final nutrition = await _mlService.getNutrition(foodName);
-      if (nutrition != null && mounted) {
+      // Try local nutrition DB first (same path as manual search)
+      final local = await NutritionDBHelper.instance.getNutrition(foodName);
+      if (local != null && mounted) {
+        _baseCalories = (local['calories'] ?? 0).toDouble();
+        _baseProtein = (local['protein'] ?? 0).toDouble();
+        _baseCarbs = (local['carbs'] ?? 0).toDouble();
+        _baseFat = (local['fat'] ?? 0).toDouble();
+        _baseFiber = (local['fiber'] ?? 0).toDouble();
+
+        _caloriesController.text = _baseCalories.toString();
+        _proteinController.text = _baseProtein.toString();
+        _carbsController.text = _baseCarbs.toString();
+        _fatController.text = _baseFat.toString();
+        _fiberController.text = _baseFiber.toString();
+      } else {
+        final nutrition = await _mlService.getNutrition(foodName);
+        if (nutrition != null && mounted) {
         // Store base values (per 100g) for scaling calculations
         _baseCalories = nutrition.calories;
         _baseProtein = nutrition.protein;
         _baseCarbs = nutrition.carbohydrates;
         _baseFat = nutrition.fat;
-        _baseFiber = 0; // Nutritionix API doesn't provide fiber
+        _baseFiber = 0; // fallback path
 
         // Set initial values
         _caloriesController.text = nutrition.calories.toString();
@@ -112,6 +128,7 @@ class _FoodConfirmationScreenState extends State<FoodConfirmationScreen> {
         _carbsController.text = nutrition.carbohydrates.toString();
         _fatController.text = nutrition.fat.toString();
         _fiberController.text = '0';
+        }
       }
     } catch (e) {
       print('Error fetching nutrition: $e');

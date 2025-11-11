@@ -181,6 +181,10 @@ class FoodFirestoreService {
       date: log.date,
       quantity: log.quantity,
       userId: userId,
+      protein: log.protein,
+      carbs: log.carbs,
+      fat: log.fat,
+      fiber: log.fiber,
     );
 
     final docRef = await _foodLogsCollection.add(logWithUserId.toMap());
@@ -359,7 +363,8 @@ class FoodFirestoreService {
             logDate.compareTo(date) <= 0;
       }).toList();
 
-      print('✅ Found ${recentDocs.length} logs for recommendation context (last 7 days)');
+      print(
+          '✅ Found ${recentDocs.length} logs for recommendation context (last 7 days)');
 
       if (recentDocs.isEmpty) {
         print('⚠️ No food logs found for recommendation generation');
@@ -392,7 +397,8 @@ class FoodFirestoreService {
               .get();
           if (userDoc.exists) {
             userProfile = userDoc.data();
-            print('👤 User profile loaded: age=${userProfile?['age']}, weight=${userProfile?['weight']}');
+            print(
+                '👤 User profile loaded: age=${userProfile?['age']}, weight=${userProfile?['weight']}');
           }
         }
       } catch (e) {
@@ -421,7 +427,8 @@ class FoodFirestoreService {
       }
       await batch.commit();
 
-      print('🗑️ Deleted ${existingRecsQuery.docs.length} existing recommendations for $date');
+      print(
+          '🗑️ Deleted ${existingRecsQuery.docs.length} existing recommendations for $date');
 
       // Save new recommendations to Firestore
       final recommendationsBatch = _firestore.batch();
@@ -452,17 +459,20 @@ class FoodFirestoreService {
       }
 
       await recommendationsBatch.commit();
-      print('💾 Successfully saved $insertedCount recommendations to Firestore');
+      print(
+          '💾 Successfully saved $insertedCount recommendations to Firestore');
 
       // Verify insertion
       final verifyQuery = await _foodRecommendationsCollection
           .where('userId', isEqualTo: userId)
           .where('date', isEqualTo: date)
           .get();
-      print('✅ Verification: Found ${verifyQuery.docs.length} recommendations in Firestore');
+      print(
+          '✅ Verification: Found ${verifyQuery.docs.length} recommendations in Firestore');
 
       if (verifyQuery.docs.isEmpty) {
-        print('⚠️ WARNING: Recommendations were saved but verification query returned 0 results');
+        print(
+            '⚠️ WARNING: Recommendations were saved but verification query returned 0 results');
         print('This might be a timing issue. Checking again...');
 
         // Wait a moment and try again
@@ -471,7 +481,8 @@ class FoodFirestoreService {
             .where('userId', isEqualTo: userId)
             .where('date', isEqualTo: date)
             .get();
-        print('🔄 Retry verification: Found ${retryQuery.docs.length} recommendations');
+        print(
+            '🔄 Retry verification: Found ${retryQuery.docs.length} recommendations');
       }
     } catch (e, stackTrace) {
       print('❌ Error generating recommendations: $e');

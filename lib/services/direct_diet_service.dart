@@ -12,8 +12,9 @@ class DirectDietService {
     Map<String, dynamic>? userProfile,
   }) async {
     final apiKey = dotenv.env['DIET_API_KEY'];
-    final model = dotenv.env['DIET_MODEL'] ?? 'moonshotai/kimi-k2-instruct';
-    
+    final model =
+        dotenv.env['DIET_MODEL'] ?? ' moonshotai/kimi-k2-instruct-0905';
+
     if (apiKey == null || apiKey.isEmpty) {
       throw Exception('DIET_API_KEY not configured in .env file');
     }
@@ -41,7 +42,8 @@ class DirectDietService {
       totalFat += (log['fat'] as num?)?.toDouble() ?? 0;
     }
 
-    print('📈 Total nutrition - Calories: $totalCalories, Protein: ${totalProtein.toStringAsFixed(1)}g, Carbs: ${totalCarbs.toStringAsFixed(1)}g, Fat: ${totalFat.toStringAsFixed(1)}g');
+    print(
+        '📈 Total nutrition - Calories: $totalCalories, Protein: ${totalProtein.toStringAsFixed(1)}g, Carbs: ${totalCarbs.toStringAsFixed(1)}g, Fat: ${totalFat.toStringAsFixed(1)}g');
 
     // Build the prompt for the AI
     final prompt = """
@@ -116,46 +118,50 @@ Return ONLY the JSON, nothing else.
 
     try {
       print('🌐 Calling Groq API...');
-      
-      final response = await http.post(
-        Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
-        headers: {
-          'Authorization': 'Bearer $apiKey',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          "model": model,
-          "messages": [
-            {"role": "user", "content": prompt}
-          ],
-          "max_tokens": 1500,
-          "temperature": 0.7,
-        }),
-      ).timeout(Duration(seconds: 30));
+
+      final response = await http
+          .post(
+            Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
+            headers: {
+              'Authorization': 'Bearer $apiKey',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              "model": model,
+              "messages": [
+                {"role": "user", "content": prompt}
+              ],
+              "max_tokens": 1500,
+              "temperature": 0.7,
+            }),
+          )
+          .timeout(Duration(seconds: 30));
 
       print('📡 API Response Status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final content = data['choices'][0]['message']['content'].toString();
-        
+
         print('📝 Raw API Response:');
         print(content);
-        
+
         // Parse JSON from response
         try {
           // Find JSON in response (handle cases where AI adds extra text)
           final jsonStart = content.indexOf('{');
           final jsonEnd = content.lastIndexOf('}') + 1;
-          
+
           if (jsonStart != -1 && jsonEnd > jsonStart) {
             final jsonStr = content.substring(jsonStart, jsonEnd);
             final parsed = jsonDecode(jsonStr);
-            
+
             if (parsed['recommendations'] != null) {
-              final recommendations = List<Map<String, dynamic>>.from(parsed['recommendations']);
-              print('✅ Successfully parsed ${recommendations.length} recommendations');
-              
+              final recommendations =
+                  List<Map<String, dynamic>>.from(parsed['recommendations']);
+              print(
+                  '✅ Successfully parsed ${recommendations.length} recommendations');
+
               // Validate and clean recommendations
               final validRecommendations = <Map<String, dynamic>>[];
               for (var rec in recommendations) {
@@ -165,7 +171,8 @@ Return ONLY the JSON, nothing else.
                     'item': rec['item'].toString(),
                     'calories': (rec['calories'] as num?)?.toInt() ?? 300,
                     'mealType': rec['mealType']?.toString() ?? 'snack',
-                    'reasoning': rec['reasoning']?.toString() ?? 'Balanced meal',
+                    'reasoning':
+                        rec['reasoning']?.toString() ?? 'Balanced meal',
                     'protein': (rec['protein'] as num?)?.toDouble() ?? 0,
                     'carbs': (rec['carbs'] as num?)?.toDouble() ?? 0,
                     'fat': (rec['fat'] as num?)?.toDouble() ?? 0,
@@ -173,15 +180,16 @@ Return ONLY the JSON, nothing else.
                   });
                 }
               }
-              
+
               if (validRecommendations.isEmpty) {
-                throw Exception('No valid recommendations found in AI response');
+                throw Exception(
+                    'No valid recommendations found in AI response');
               }
-              
+
               return validRecommendations;
             }
           }
-          
+
           throw Exception('No recommendations array found in response');
         } catch (e) {
           print('❌ Error parsing recommendations: $e');

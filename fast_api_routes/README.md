@@ -25,7 +25,7 @@ This service provides AI-powered food recommendations using Groq's LLM API.
 ## Environment Variables
 
 - `GROQ_API_KEY`: Your Groq API key (required)
-- `GROQ_MODEL`: The model to use (default: "moonshotai/kimi-k2-instruct")
+- `GROQ_MODEL`: The model to use (default:  moonshotai/kimi-k2-instruct-0905")
 
 ## Security Note
 
